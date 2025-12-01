@@ -1,0 +1,98 @@
+# ==========================================
+# FortiGate (Site 1) - Final Wildcard Config
+# ==========================================
+
+# 1) Phase 1 (IKEv2)
+config vpn ipsec phase1-interface
+    edit "S2S-FG-PA"
+        set interface "port1"
+        set peertype any
+        set remote-gw 200.200.200.1
+        set psksecret "S1-S2_vpn!Q9u5#2025"
+        set ike-version 2
+        # Standard Proposal: AES256/SHA256
+        set proposal aes256-sha256 aes192-sha256
+        set dhgrp 14
+        set keylife 43200
+        set nattraversal enable
+        set dpd on-demand
+        set dpd-retryinterval 20
+        set dpd-max-fail 3
+    next
+end
+
+# 2) Phase 2 (Wildcard Selectors)
+config vpn ipsec phase2-interface
+    edit "S2S-FG-PA-P2"
+        set phase1name "S2S-FG-PA"
+        set proposal aes256-sha256 aes192-sha256
+        set pfs enable
+        set dhgrp 14
+        # CRITICAL: Match Palo Alto default lifetime (1 Hour)
+        set keylifeseconds 3600
+        # Wildcard: Let Routing & Policy decide what passes
+        set src-subnet 0.0.0.0 0.0.0.0
+        set dst-subnet 0.0.0.0 0.0.0.0
+        set auto-negotiate enable
+        set replay enable
+    next
+end
+
+# 3) Tunnel Interface (Route-Based)
+config system interface
+    edit "S2S-FG-PA"
+        set vdom "root"
+        set ip 169.255.1.1 255.255.255.252
+        set allowaccess ping
+        set type tunnel
+        set interface "port1"
+    next
+end
+
+# 4) Routing (Static Routes to Site 2 LANs)
+config router static
+    edit 10
+        set dst 10.200.201.0 255.255.255.0
+        set gateway 169.255.1.2
+        set device "S2S-FG-PA"
+    next
+    edit 11
+        set dst 10.200.202.0 255.255.255.0
+        set gateway 169.255.1.2
+        set device "S2S-FG-PA"
+    next
+end
+
+# 5) Policies (No NAT + MSS Clamping)
+config firewall policy
+    edit 100
+        set name "LAN-to-S2S-FG-PA"
+        set srcintf "port2" "port3"
+        set dstintf "S2S-FG-PA"
+        set srcaddr "all"
+        set dstaddr "all"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+        # NO NAT enabled
+        set nat disable
+        # Fix for VPN Overhead
+        set tcp-mss-sender 1360
+        set tcp-mss-receiver 1360
+        set logtraffic all
+    next
+    edit 101
+        set name "S2S-FG-PA-to-LAN"
+        set srcintf "S2S-FG-PA"
+        set dstintf "port2" "port3"
+        set srcaddr "all"
+        set dstaddr "all"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+        set nat disable
+        set tcp-mss-sender 1360
+        set tcp-mss-receiver 1360
+        set logtraffic all
+    next
+end
