@@ -36,7 +36,7 @@
     vpn_ipsec_phase1_interface:
       name: "S2S-FG-PA"
 
-- name: 1.b CREAR - Configurar Phase 1 (Final Fix)
+- name: 1.b CREAR - Configurar Phase 1 (Bulletproof)
   fortios_vpn_ipsec_phase1_interface:
     vdom: "root"
     state: "present"
@@ -44,14 +44,16 @@
       name: "S2S-FG-PA"
       interface: "port1"
       ike_version: "2"
+      # Quitamos 'type' y 'wizard_type' para que use defaults
       peertype: "any"
+      net_device: "disable"
+      proposal: "aes256-sha256"
+      # DH Group como lista (algunas versiones lo prefieren así)
+      dhgrp: "14"
       remote_gw: "192.168.2.99"
       psksecret: "{{ vpn_psk }}"
-      proposal: "aes256-sha256"
-      dhgrp: "14"
-      nattraversal: "enable"
-      dpd: "on-demand"
-      wizard_type: "static-fortigate"
+      # Nattraversal disable para simplificar la negociación inicial
+      nattraversal: "disable"
 
 - name: 2. Configurar Phase 2 (IPSec Tunnel)
   fortios_vpn_ipsec_phase2_interface:
