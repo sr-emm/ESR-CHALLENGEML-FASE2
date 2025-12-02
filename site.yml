@@ -8,12 +8,3 @@
   roles:
     - role: fortigate_vpn
 
-# --- NUEVO BLOQUE ---
-- name: Despliegue de VPN Site-to-Site (Palo Alto Side)
-  hosts: paloaltos
-  connection: local
-  gather_facts: no
-  collections:
-    - paloaltonetworks.panos
-  roles:
-    - role: paloalto_vpn

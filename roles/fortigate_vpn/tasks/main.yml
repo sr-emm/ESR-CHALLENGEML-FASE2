@@ -29,24 +29,24 @@
   debug:
     msg: "La clave PSK es: {{ vpn_psk }}"
 
-# Tarea de limpieza eliminada para evitar conflictos de dependencias
-
+# Tarea 1.b: Fase 1 VPN (Revertido a port1)
 - name: 1.b CREAR - Configurar Phase 1 (Low Encryption Fix)
   fortios_vpn_ipsec_phase1_interface:
     vdom: "root"
     state: "present"
     vpn_ipsec_phase1_interface:
       name: "S2S-FG-PA"
-      interface: "port2"
+      interface: "port1"           # <--- REVERTIDO A PORT1 (WAN)
       ike_version: "2"
       peertype: "any"
       net_device: "disable"
-      proposal: "des-sha256"
+      proposal: "des-sha256"       # Mantenemos el fix de encriptacion
       dhgrp: "14"
       remote_gw: "192.168.2.99"
       psksecret: "{{ vpn_psk }}"
       nattraversal: "disable"
 
+# Tarea 2: Fase 2 VPN
 - name: 2. Configurar Phase 2 (IPSec Tunnel)
   fortios_vpn_ipsec_phase2_interface:
     vdom: "root"
@@ -61,6 +61,7 @@
       dst_subnet: "0.0.0.0 0.0.0.0"
       auto_negotiate: "enable"
 
+# Tarea 3: Interfaz de Tunel (Revertido a port1)
 - name: 3. Configurar Interfaz de Tunel (VTI)
   fortios_system_interface:
     vdom: "root"
@@ -68,19 +69,19 @@
     system_interface:
       name: "S2S-FG-PA"
       vdom: "root"
-      # Mascara /32 es obligatoria para interfaces tunel
-      ip: "169.255.1.1 255.255.255.255"
+      ip: "169.255.1.1 255.255.255.255" # Mascara /32 (Fix aplicado)
       allowaccess: "ping"
       type: "tunnel"
-      interface: "port2"
+      interface: "port1"           # <--- REVERTIDO A PORT1 PARA COINCIDIR CON PHASE 1
       remote_ip: "169.255.1.2 255.255.255.255"
 
+# Tareas de Routing y Politicas (Se mantienen igual)
 - name: 4. Configurar Ruta Estatica hacia Site B
   fortios_router_static:
     vdom: "root"
     state: "present"
     router_static:
-      seq_num: "10"                # ID OBLIGATORIO AGREGADO
+      seq_num: "10"
       dst: "10.200.200.0 255.255.252.0"
       device: "S2S-FG-PA"
 
@@ -89,7 +90,7 @@
     vdom: "root"
     state: "present"
     firewall_policy:
-      policyid: "100"              # ID OBLIGATORIO AGREGADO
+      policyid: "100"
       name: "LAN-to-VPN"
       srcintf:
         - name: "port2"
@@ -112,7 +113,7 @@
     vdom: "root"
     state: "present"
     firewall_policy:
-      policyid: "101"              # ID OBLIGATORIO AGREGADO
+      policyid: "101"
       name: "VPN-to-LAN"
       srcintf:
         - name: "S2S-FG-PA"
