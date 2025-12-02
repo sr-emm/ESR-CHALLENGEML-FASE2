@@ -1,0 +1,132 @@
+---
+- name: 0. Configurar Interfaz LAN 1 (port2)
+  fortios_system_interface:
+    vdom: "root"
+    state: "present"
+    system_interface:
+      name: "port2"
+      vdom: "root"
+      mode: "static"
+      ip: "10.100.101.251 255.255.255.0"
+      allowaccess: "ping,https,ssh"
+      type: "physical"
+      alias: "LAN_S1_Data"
+
+- name: 0. Configurar Interfaz LAN 2 (port3)
+  fortios_system_interface:
+    vdom: "root"
+    state: "present"
+    system_interface:
+      name: "port3"
+      vdom: "root"
+      mode: "static"
+      ip: "10.100.102.251 255.255.255.0"
+      allowaccess: "ping"
+      type: "physical"
+      alias: "LAN_S1_Voice"
+
+- name: DEBUG - Verificar PSK
+  debug:
+    msg: "La clave PSK es: {{ vpn_psk }}"
+
+- name: 1.a LIMPIEZA - Borrar Phase 1 existente (si hay error previo)
+  fortios_vpn_ipsec_phase1_interface:
+    vdom: "root"
+    state: "absent"
+    vpn_ipsec_phase1_interface:
+      name: "S2S-FG-PA"
+
+- name: 1.b CREAR - Configurar Phase 1 (Final Fix)
+  fortios_vpn_ipsec_phase1_interface:
+    vdom: "root"
+    state: "present"
+    vpn_ipsec_phase1_interface:
+      name: "S2S-FG-PA"
+      interface: "port1"
+      ike_version: "2"
+      peertype: "any"
+      remote_gw: "192.168.2.99"
+      psksecret: "{{ vpn_psk }}"
+      proposal: "aes256-sha256"
+      dhgrp: "14"
+      nattraversal: "enable"
+      dpd: "on-demand"
+      wizard_type: "static-fortigate"
+
+- name: 2. Configurar Phase 2 (IPSec Tunnel)
+  fortios_vpn_ipsec_phase2_interface:
+    vdom: "root"
+    state: "present"
+    vpn_ipsec_phase2_interface:
+      name: "S2S-FG-PA-P2"
+      phase1name: "S2S-FG-PA"
+      proposal: "aes256-sha256"
+      dhgrp: "14"
+      keylifeseconds: 3600         # CRITICO para Palo Alto
+      src_subnet: "0.0.0.0 0.0.0.0"
+      dst_subnet: "0.0.0.0 0.0.0.0"
+      auto_negotiate: "enable"
+
+- name: 3. Configurar Interfaz de Túnel (VTI)
+  fortios_system_interface:
+    vdom: "root"
+    state: "present"
+    system_interface:
+      name: "S2S-FG-PA"
+      vdom: "root"
+      ip: "169.255.1.1 255.255.255.252"
+      allowaccess: "ping"
+      type: "tunnel"
+      interface: "port1"
+
+- name: 4. Configurar Ruta Estática hacia Site B
+  fortios_router_static:
+    vdom: "root"
+    state: "present"
+    router_static:
+      dst: "10.200.200.0 255.255.252.0"
+      device: "S2S-FG-PA"
+
+- name: 5. Configurar Política de Firewall (Salida)
+  fortios_firewall_policy:
+    vdom: "root"
+    state: "present"
+    firewall_policy:
+      name: "LAN-to-VPN"
+      srcintf:
+        - name: "port2"
+        - name: "port3"
+      dstintf:
+        - name: "S2S-FG-PA"
+      srcaddr:
+        - name: "all"
+      dstaddr:
+        - name: "all"
+      action: "accept"
+      schedule: "always"
+      service:
+        - name: "ALL"
+      nat: "disable"
+      logtraffic: "all"
+
+- name: 6. Configurar Política de Firewall (Entrada)
+  fortios_firewall_policy:
+    vdom: "root"
+    state: "present"
+    firewall_policy:
+      name: "VPN-to-LAN"
+      srcintf:
+        - name: "S2S-FG-PA"
+      dstintf:
+        - name: "port2"
+        - name: "port3"
+      srcaddr:
+        - name: "all"
+      dstaddr:
+        - name: "all"
+      action: "accept"
+      schedule: "always"
+      service:
+        - name: "ALL"
+      nat: "disable"
+      logtraffic: "all"

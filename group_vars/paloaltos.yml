@@ -1,0 +1,12 @@
+# Credenciales
+ansible_user: admin
+ansible_password: "tu_password_paloalto" # <--- PON TU PASSWORD AQUÍ
+
+# Configuración de Conexión
+ansible_connection: local
+
+# Objeto 'provider' que requieren muchos módulos de Palo Alto
+pa_provider:
+  ip_address: "{{ ansible_host }}"
+  username: "{{ ansible_user }}"
+  password: "{{ ansible_password }}"

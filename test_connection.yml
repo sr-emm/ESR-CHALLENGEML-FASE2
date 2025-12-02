@@ -1,0 +1,17 @@
+- name: Prueba de Conectividad FortiGate
+  hosts: fortigates
+  connection: httpapi
+  gather_facts: no
+  collections:
+    - fortinet.fortios
+  
+  tasks:
+    - name: Obtener estado del sistema (Read-Only)
+      fortios_monitor_fact:
+        selector: 'system_status'
+        vdom: 'root'
+      register: resultado_login
+
+    - name: Mostrar versión de Firmware
+      debug:
+        msg: "¡Conexión Exitosa! El FortiGate está corriendo versión: {{ resultado_login.meta.version }}"
