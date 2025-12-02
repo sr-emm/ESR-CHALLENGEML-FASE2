@@ -154,7 +154,7 @@
     - group_vars/all.yml
 
   tasks:
-    # --- 1. Interfaces ---
+    # --- 1. Interfaces Físicas ---
     - name: Configurar WAN ({{ pa_wan_intf }})
       panos_interface:
         provider: "{{ pa_provider }}"
@@ -162,8 +162,8 @@
         mode: "layer3"
         enable_dhcp: "{{ 'true' if pa_mode == 'dhcp' else 'false' }}"
         create_default_route: "{{ 'true' if pa_mode == 'dhcp' else 'false' }}"
-        # Si fuera estática, aquí iría la IP:
-        # ip: ["{{ pa_wan_ip }}"] 
+        # Lógica Jinja2 para IP Estática si no es DHCP
+        ip: "{{ [pa_wan_ip] if pa_mode == 'static' else omit }}"
         vr_name: "default"
         zone_name: "untrust"
 
@@ -185,6 +185,7 @@
         vr_name: "default"
         zone_name: "trust"
 
+    # --- 2. Interfaz Túnel ---
     - name: Configurar Interfaz Túnel (tunnel.1)
       panos_interface:
         provider: "{{ pa_provider }}"
@@ -194,7 +195,7 @@
         vr_name: "default"
         zone_name: "VPN_Zone"
 
-    # --- 2. Perfiles Criptográficos (Match Fortinet) ---
+    # --- 3. Perfiles Criptográficos (Match Fortinet) ---
     - name: Perfil IKE (Phase 1)
       panos_ike_crypto_profile:
         provider: "{{ pa_provider }}"
@@ -213,7 +214,7 @@
         esp_authentication: ["{{ pa_auth_algo }}"]
         lifetime_seconds: 3600
 
-    # --- 3. VPN ---
+    # --- 4. VPN Objects ---
     - name: Configurar IKE Gateway
       panos_ike_gateway:
         provider: "{{ pa_provider }}"
@@ -242,18 +243,43 @@
         local: "0.0.0.0/0"
         remote: "0.0.0.0/0"
 
-    # --- 4. Routing ---
+    # --- 5. Routing ---
     - name: Ruta Estática hacia Site A
       panos_static_route:
         provider: "{{ pa_provider }}"
         name: "Ruta-a-SiteA"
-        destination: "{{ fg_lan1_cidr }}" # Rutear LAN 1
+        destination: "{{ fg_lan1_cidr }}" # Rutear LAN 1 de Fortinet
         nexthop_type: "ip-address"
-        nexthop: "{{ fg_tunnel_ip.split(' ')[0] }}" # Solo la IP, sin mascara
+        nexthop: "{{ fg_tunnel_ip.split(' ')[0] }}" # IP del Túnel FortiGate
         interface: "tunnel.1"
         virtual_router: "default"
 
-    # --- 5. Commit ---
-    - name: COMMIT FINAL (Palo Alto)
+    # --- 6. Políticas de Seguridad (Firewall) ---
+    - name: Política Trust a VPN (Salida)
+      panos_security_rule:
+        provider: "{{ pa_provider }}"
+        rule_name: "LAN-to-VPN"
+        source_zone: ["trust"]
+        destination_zone: ["VPN_Zone"]
+        source_ip: ["any"]
+        destination_ip: ["any"]
+        application: ["any"]
+        service: ["application-default"]
+        action: "allow"
+
+    - name: Política VPN a Trust (Entrada)
+      panos_security_rule:
+        provider: "{{ pa_provider }}"
+        rule_name: "VPN-to-LAN"
+        source_zone: ["VPN_Zone"]
+        destination_zone: ["trust"]
+        source_ip: ["any"]
+        destination_ip: ["any"]
+        application: ["any"]
+        service: ["application-default"]
+        action: "allow"
+
+    # --- 7. Commit ---
+    - name: COMMIT FINAL (Aplicar cambios en Palo Alto)
       panos_commit:
         provider: "{{ pa_provider }}"
