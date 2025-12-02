@@ -11,6 +11,10 @@ pa_auth_algo: "{{ palo_auth }}"
 
 # --- FORTIGATE SITE A ---
 fg_wan_intf: "{{ fg_wan_interface }}"
+# Nuevas variables para las interfaces LAN
+fg_lan1_intf: "{{ fg_lan1_interface }}"
+fg_lan2_intf: "{{ fg_lan2_interface }}"
+
 fg_mode: "{{ 'dhcp' if fg_is_dhcp else 'static' }}"
 fg_wan_ip: "{{ fg_wan_ip | default('') }}" 
 fg_wan_gw: "{{ fg_wan_gw | default('') }}"
@@ -25,11 +29,14 @@ fg_remote_gw: "{{ fg_remote_gw }}"
 
 # --- PALO ALTO SITE B ---
 pa_wan_intf: "{{ pa_wan_interface }}"
+# Nuevas variables para interfaces LAN PA
+pa_lan1_intf: "{{ pa_lan1_interface }}"
+pa_lan2_intf: "{{ pa_lan2_interface }}"
+
 pa_mode: "{{ 'dhcp' if pa_is_dhcp else 'static' }}"
 pa_wan_ip: "{{ pa_wan_ip | default('') }}"
 pa_wan_gw: "{{ pa_wan_gw | default('') }}"
 
-# Nuevas LANs para Palo Alto
 pa_lan1_cidr: "{{ pa_lan1_ip }}"
 pa_lan2_cidr: "{{ pa_lan2_ip }}"
 
