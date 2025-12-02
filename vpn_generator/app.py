@@ -4,7 +4,8 @@ from flask import Flask, render_template, request, send_file
 
 app = Flask(__name__)
 
-# Los perfiles ahora solo definen los algoritmos de encriptación
+# --- PERFILES DE ENCRIPTACIÓN ---
+# Solo definen los algoritmos. El grupo DH se inyecta dinámicamente desde el form.
 VPN_PROFILES = {
     "lab_legacy": {
         "name": "🧪 Lab / Legacy (DES-SHA256)",
@@ -34,44 +35,69 @@ def index():
     if request.method == 'POST':
         data = request.form.to_dict()
         
-        # 1. Aplicar Perfil de Encriptación
+        # 1. Aplicar Perfil de Encriptación seleccionado
         data.update(VPN_PROFILES[data.get('vpn_profile', 'lab_legacy')])
 
         # 2. Aplicar Selección Manual de Diffie-Hellman
-        # Esto sobrescribe o establece el dh_group final
+        # Esto permite desacoplar el algoritmo de cifrado del grupo de intercambio de claves
         data['dh_group'] = data.get('dh_group_select', '14')
 
-        # 3. Normalizar booleanos
+        # 3. Normalizar booleanos (Checkbox HTML no envía valor si está desmarcado)
         data['fg_is_dhcp'] = 'fg_is_dhcp' in data
         data['pa_is_dhcp'] = 'pa_is_dhcp' in data
 
-        # 4. Lógica de Peer IP
+        # 4. Lógica de Peer IP (Determinación de vecinos)
+        
+        # Para Palo Alto (Quién es su Peer Fortinet)
         if not data['fg_is_dhcp']:
+            # Si FG es Estático, su IP WAN es la Peer IP (quitamos la máscara CIDR)
             data['pa_peer_ip'] = data['fg_wan_ip'].split('/')[0]
         else:
+            # Si FG es DHCP (Lab), asumimos la IP conocida del laboratorio
             data['pa_peer_ip'] = "10.100.100.114"
 
+        # Para Fortinet (Quién es su Remote Gateway Palo Alto)
         if not data['pa_is_dhcp']:
+            # Si PA es Estático
             data['fg_remote_gw'] = data['pa_wan_ip'].split('/')[0]
         else:
+            # Si PA es DHCP (Lab)
             data['fg_remote_gw'] = "10.100.100.115"
 
-        # 5. Generar ZIP
+        # 5. Generar ZIP en Memoria
         memory_file = io.BytesIO()
         with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-            for template in ['inventory.j2', 'all_vars.j2', 'site.j2']:
-                content = render_template(f'ansible_templates/{template}', **data)
-                dest_name = template.replace('.j2', '.yml')
-                if template == 'inventory.j2': dest_name = 'inventory/hosts.yml'
-                if template == 'all_vars.j2': dest_name = 'group_vars/all.yml'
-                
-                zf.writestr(dest_name, content)
+            
+            # Renderizar y mapear cada plantilla a su destino final
+            templates_map = {
+                'inventory.j2': 'inventory/hosts.yml',
+                'all_vars.j2': 'group_vars/all.yml',
+                'site.j2': 'site.yml'
+            }
 
-            zf.writestr('ansible.cfg', "[defaults]\ninventory=./inventory/hosts.yml\nhost_key_checking=False\n")
+            for template_file, dest_path in templates_map.items():
+                content = render_template(f'ansible_templates/{template_file}', **data)
+                zf.writestr(dest_path, content)
+
+            # Agregar archivo de configuración base de Ansible
+            ansible_cfg = """[defaults]
+inventory = ./inventory/hosts.yml
+host_key_checking = False
+retry_files_enabled = False
+deprecation_warnings = False
+interpreter_python = auto_silent
+timeout = 30
+"""
+            zf.writestr('ansible.cfg', ansible_cfg)
 
         memory_file.seek(0)
-        return send_file(memory_file, download_name="ansible_vpn_config.zip", as_attachment=True)
+        return send_file(
+            memory_file,
+            download_name="ansible_vpn_config.zip",
+            as_attachment=True
+        )
 
+    # Renderizado inicial del formulario (GET)
     return render_template('index.html', profiles=VPN_PROFILES)
 
 if __name__ == '__main__':
