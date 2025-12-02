@@ -6,7 +6,7 @@
     <title>Generador VPN: FortiGate <-> Palo Alto</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { background-color: #0d1117; } /* Fondo Dark GitHub Style */
+        body { background-color: #0d1117; }
         .card { border: 1px solid #30363d; background-color: #161b22; }
         .card-header { font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
         
@@ -25,7 +25,7 @@
             background-color: #0d1117; 
             color: #c9d1d9; 
             border: 1px solid #30363d;
-            font-family: 'Courier New', Courier, monospace; /* Fuente Monospace */
+            font-family: 'Courier New', Courier, monospace;
         }
         .form-control:focus, .form-select:focus { 
             background-color: #0d1117; 
@@ -60,7 +60,7 @@
                         <div class="mb-3">
                             <label class="form-label">Interfaz WAN</label>
                             <select class="form-select" name="fg_wan_interface">
-                                <option value="port1" selected>port1 (WAN)</option>
+                                <option value="port1" selected>port1</option>
                                 {% for i in range(2, 17) %}
                                 <option value="port{{ i }}">port{{ i }}</option>
                                 {% endfor %}
@@ -152,12 +152,12 @@
                 <div class="row">
                     <div class="col-md-4 mb-3">
                         <label class="form-label text-warning fw-bold">Nombre del Túnel</label>
-                        <input type="text" class="form-control" name="vpn_name" value="S2S-AUTO" required>
+                        <input type="text" class="form-control font-monospace" name="vpn_name" value="S2S-AUTO" required>
                     </div>
                     
                     <div class="col-md-4 mb-3">
                         <label class="form-label text-warning fw-bold">PSK (Segura)</label>
-                        <input type="text" class="form-control" name="vpn_psk" 
+                        <input type="text" class="form-control font-monospace" name="vpn_psk" 
                                value="Fortinet#VPN_2025" 
                                required 
                                pattern="[a-zA-Z0-9@!_.\-+#]+" 
@@ -187,9 +187,6 @@
                             <option value="{{ key }}">{{ profile.name }}</option>
                             {% endfor %}
                         </select>
-                        <div class="form-text text-secondary">
-                            El perfil ajusta automáticamente AES/DES en ambos extremos para evitar errores.
-                        </div>
                     </div>
                 </div>
             </div>
@@ -215,15 +212,14 @@
         }
     }
     
-    // Validación PSK: Permite #, Bloquea comillas para proteger YAML
     function validatePSK(input) {
-        // 1. Bloqueo estricto de comillas simples y dobles
+        // Bloquear comillas para proteger YAML
         if (input.value.includes('"') || input.value.includes("'")) {
             input.value = input.value.replace(/["']/g, '');
             input.classList.add('is-invalid');
         }
         
-        // 2. Regex para caracteres permitidos (incluyendo #)
+        // Regex permite # y otros símbolos seguros
         var regex = /[^a-zA-Z0-9@!_.\-+#]/g;
         if (regex.test(input.value)) {
             input.value = input.value.replace(regex, '');
