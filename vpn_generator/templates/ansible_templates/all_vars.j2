@@ -1,28 +1,37 @@
-# --- VARIABLES GLOBALES GENERADAS POR UI ---
+# --- GLOBAL ---
 vpn_name: "{{ vpn_name }}"
 vpn_psk: "{{ vpn_psk }}"
 
-# --- PARAMETROS CRIPTOGRAFICOS (Segun Perfil) ---
-# Estos valores vienen del backend Python para asegurar match exacto
+# --- CRYPTO ---
 phase1_proposal: "{{ phase1_prop }}"
 phase2_proposal: "{{ phase2_prop }}"
 dh_group: "{{ dh_group }}"
-
-# Palo Alto Encryption (Traduccion de formato)
 pa_enc_algo: "{{ palo_enc }}"
 pa_auth_algo: "{{ palo_auth }}"
 
-# --- FORTIGATE (SITE A) ---
+# --- FORTIGATE SITE A ---
 fg_wan_intf: "{{ fg_wan_interface }}"
+fg_mode: "{{ 'dhcp' if fg_is_dhcp else 'static' }}"
+fg_wan_ip: "{{ fg_wan_ip | default('') }}" 
+fg_wan_gw: "{{ fg_wan_gw | default('') }}"
+
 fg_lan1_cidr: "{{ fg_lan1_ip }}"
 fg_lan2_cidr: "{{ fg_lan2_ip }}"
-# IPs del Tunel (Punto a Punto /32 fijo)
+
+# Tunnel IPs
 fg_tunnel_ip: "169.255.1.1 255.255.255.255"
 fg_remote_tunnel_ip: "169.255.1.2 255.255.255.255"
+fg_remote_gw: "{{ fg_remote_gw }}"
 
-# --- PALO ALTO (SITE B) ---
+# --- PALO ALTO SITE B ---
 pa_wan_intf: "{{ pa_wan_interface }}"
-pa_lan_supernet: "{{ pa_lan_subnet }}"
+pa_mode: "{{ 'dhcp' if pa_is_dhcp else 'static' }}"
+pa_wan_ip: "{{ pa_wan_ip | default('') }}"
+pa_wan_gw: "{{ pa_wan_gw | default('') }}"
+
+# Nuevas LANs para Palo Alto
+pa_lan1_cidr: "{{ pa_lan1_ip }}"
+pa_lan2_cidr: "{{ pa_lan2_ip }}"
+
 pa_tunnel_ip: "169.255.1.2/32"
-# Peer IP (Se asume que la IP de gestion FG es alcanzable o usar IP publica real si existe)
-pa_peer_ip: "{{ fg_mgmt_ip }}"
+pa_peer_ip: "{{ pa_peer_ip }}"
