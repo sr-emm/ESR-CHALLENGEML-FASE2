@@ -10,6 +10,7 @@
         .card { border: 1px solid #30363d; background-color: #161b22; }
         .card-header { font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
         
+        /* Branding */
         .border-forti { border-color: #dc3545 !important; }
         .text-forti { color: #dc3545 !important; }
         .bg-forti { background-color: #dc3545 !important; }
@@ -18,6 +19,7 @@
         .text-palo { color: #0d6efd !important; }
         .bg-palo { background-color: #0d6efd !important; }
 
+        /* Inputs */
         .form-control, .form-select { 
             background-color: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
             font-family: 'Courier New', Courier, monospace;
@@ -27,7 +29,6 @@
             box-shadow: 0 0 0 0.25rem rgba(88, 166, 255, 0.25);
         }
         
-        option:disabled { color: #5a5a5a; background-color: #1c1c1c; }
         .hidden-field { display: none; }
         input:invalid { border-color: #dc3545; background-image: none; }
         input:valid { border-color: #198754; background-image: none; }
@@ -38,7 +39,7 @@
 <div class="container py-5">
     <div class="text-center mb-5">
         <h1 class="display-5 fw-bold text-light">🚀 Generador VPN: <span class="text-success">Ansible</span></h1>
-        <p class="lead text-secondary">Configuración con validación de interfaces.</p>
+        <p class="lead text-secondary">Configuración completa con Credenciales.</p>
     </div>
 
     <form method="POST" action="/">
@@ -98,9 +99,21 @@
                             </div>
                         </div>
                         
-                        <div class="mt-3">
+                        <hr class="border-secondary">
+                        <h6 class="text-forti mb-2">Acceso y Gestión</h6>
+                        <div class="mb-2">
                             <label class="form-label text-muted small">IP de Gestión</label>
                             <input type="text" class="form-control form-control-sm" name="fg_mgmt_ip" placeholder="192.168.1.99" required>
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="form-label text-muted small">Usuario</label>
+                                <input type="text" class="form-control form-control-sm" name="fg_username" value="admin" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label text-muted small">Contraseña</label>
+                                <input type="password" class="form-control form-control-sm" name="fg_password" required>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -160,9 +173,21 @@
                             </div>
                         </div>
 
-                        <div class="mt-3">
+                        <hr class="border-secondary">
+                        <h6 class="text-palo mb-2">Acceso y Gestión</h6>
+                        <div class="mb-2">
                             <label class="form-label text-muted small">IP de Gestión</label>
                             <input type="text" class="form-control form-control-sm" name="pa_mgmt_ip" placeholder="192.168.2.99" required>
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="form-label text-muted small">Usuario</label>
+                                <input type="text" class="form-control form-control-sm" name="pa_username" value="admin" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label text-muted small">Contraseña</label>
+                                <input type="password" class="form-control form-control-sm" name="pa_password" required>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -176,20 +201,14 @@
                         <label class="form-label text-warning fw-bold">Nombre del Túnel</label>
                         <input type="text" class="form-control" name="vpn_name" value="S2S-AUTO" required>
                     </div>
-                    
                     <div class="col-md-4 mb-3">
-                        <label class="form-label text-warning fw-bold">PSK (Sin #)</label>
+                        <label class="form-label text-warning fw-bold">PSK (Segura)</label>
                         <input type="text" class="form-control" name="vpn_psk" 
                                value="Fortinet_VPN_2025" 
                                required 
                                pattern="[a-zA-Z0-9@!_.\-+]+" 
-                               title="Permitidos: Letras, números y @ ! - _ . +"
                                oninput="validatePSK(this)">
-                        <div class="form-text text-secondary">
-                            Símbolos seguros permitidos: <span class="text-white">@ ! - _ . +</span> (Sin #)
-                        </div>
                     </div>
-
                     <div class="col-md-4 mb-3">
                         <label class="form-label text-warning fw-bold">Diffie-Hellman (DH)</label>
                         <select class="form-select border-warning" name="dh_group_select">
@@ -200,7 +219,6 @@
                         </select>
                     </div>
                 </div>
-
                 <div class="row">
                     <div class="col-md-12">
                         <label class="form-label text-warning fw-bold">Perfil de Encriptación</label>
@@ -234,14 +252,11 @@
         }
     }
     
-    // VALIDACIÓN PSK: Elimina # y Comillas
     function validatePSK(input) {
-        // Bloquear comillas y #
         if (input.value.includes('"') || input.value.includes("'") || input.value.includes("#")) {
             input.value = input.value.replace(/["'#]/g, '');
             input.classList.add('is-invalid');
         }
-        
         var regex = /[^a-zA-Z0-9@!_.\-+]/g;
         if (regex.test(input.value)) {
             input.value = input.value.replace(regex, '');
@@ -254,9 +269,7 @@
     function updatePorts(prefix) {
         let selects = document.querySelectorAll('.' + prefix + '-selector');
         let selectedValues = [];
-
         selects.forEach(sel => { selectedValues.push(sel.value); });
-
         selects.forEach((sel) => {
             let currentVal = sel.value;
             for (let i = 0; i < sel.options.length; i++) {
@@ -265,7 +278,7 @@
                     opt.disabled = true;
                     let shortName = opt.value.replace("ethernet", "eth");
                     if (prefix === 'fg') shortName = opt.value;
-                    opt.innerText = shortName + " (Ocupado)"; 
+                    opt.innerText = shortName + " (En Uso)"; 
                 } else {
                     opt.disabled = false;
                     let shortName = opt.value.replace("ethernet", "eth");

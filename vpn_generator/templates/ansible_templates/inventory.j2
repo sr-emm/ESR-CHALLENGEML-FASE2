@@ -4,8 +4,8 @@ all:
       hosts:
         forti_site_a:
           ansible_host: {{ fg_mgmt_ip }}
-          ansible_user: admin
-          ansible_password: "password123" # Cambiar en produccion
+          ansible_user: "{{ fg_username }}"
+          ansible_password: "{{ fg_password }}"
           ansible_connection: httpapi
           ansible_network_os: fortinet.fortios.fortios
           ansible_httpapi_use_ssl: yes
@@ -16,6 +16,6 @@ all:
       hosts:
         palo_site_b:
           ansible_host: {{ pa_mgmt_ip }}
-          ansible_user: admin
-          ansible_password: "password123"
+          ansible_user: "{{ pa_username }}"
+          ansible_password: "{{ pa_password }}"
           ansible_connection: local
