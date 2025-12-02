@@ -1,10 +1,21 @@
 ---
+- name: 0. Configurar Interfaz WAN (ethernet1/1) por DHCP
+  paloaltonetworks.panos.panos_interface:
+    provider: "{{ pa_provider }}"
+    if_name: "ethernet1/1"
+    mode: "layer3"
+    enable_dhcp: true
+    create_default_route: true
+    # Asignar a Zona y VR
+    vr_name: "default"
+    zone_name: "untrust"
+    state: "present"
+
 - name: 1. Configurar IKE Crypto Profile (Phase 1)
   paloaltonetworks.panos.panos_ike_crypto_profile:
     provider: "{{ pa_provider }}"
     name: "S2S-FG-PA-IKE"
     dh_group: ["group14"]
-    # Ajustado a lo que soporta tu FortiGate VM
     encryption: ["des-cbc"]
     hash: ["sha256"]
     lifetime_seconds: 43200
@@ -17,7 +28,6 @@
     dh_group: "group14"
     esp_encryption: ["des-cbc"]
     esp_authentication: ["sha256"]
-    # Crítico: Coincidir 1 hora con FortiGate
     lifetime_seconds: 3600
     state: "present"
 
@@ -25,10 +35,9 @@
   paloaltonetworks.panos.panos_interface:
     provider: "{{ pa_provider }}"
     if_name: "tunnel.1"
-    ip: ["169.255.1.2/30"]
+    ip: ["169.255.1.2/32"] # Ajustado a /32 para match con FortiGate
     create_default_route: false
     enable_dhcp: false
-    # Asignar a Virtual Router y Zona
     vr_name: "default"
     zone_name: "VPN_Zone"
     state: "present"
@@ -38,9 +47,10 @@
     provider: "{{ pa_provider }}"
     name: "S2S-FG-PA-GW"
     version: "ikev2"
-    interface: "ethernet1/1"   # Asumiendo esta es tu WAN en PA
-    local_ip_address: "192.168.2.99"
-    peer_ip_value: "192.168.1.99" # IP del FortiGate
+    interface: "ethernet1/1"
+    # IMPORTANTE: Al ser DHCP, no definimos 'local_ip_address' estática
+    # Apuntamos a la IP del FortiGate (10.100.100.114)
+    peer_ip_value: "10.100.100.114" 
     pre_shared_key: "{{ vpn_psk }}"
     crypto_profile: "S2S-FG-PA-IKE"
     liveness_check: 5
@@ -56,7 +66,7 @@
     enable_tunneling: true
     state: "present"
 
-- name: 5.1 Agregar Proxy ID Wildcard (Compatibilidad FortiGate)
+- name: 5.1 Agregar Proxy ID Wildcard
   paloaltonetworks.panos.panos_ipsec_tunnel_proxy_id:
     provider: "{{ pa_provider }}"
     tunnel_name: "S2S-FG-PA"
@@ -71,11 +81,11 @@
     name: "Ruta-a-SiteA"
     destination: "10.100.100.0/22"
     nexthop_type: "ip-address"
-    nexthop: "169.255.1.1"
+    nexthop: "169.255.1.1" # IP del Túnel FortiGate
     interface: "tunnel.1"
     virtual_router: "default"
     state: "present"
 
-- name: 7. Commit (Aplicar Cambios)
+- name: 7. Commit
   paloaltonetworks.panos.panos_commit:
     provider: "{{ pa_provider }}"

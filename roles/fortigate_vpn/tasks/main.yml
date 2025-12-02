@@ -42,7 +42,7 @@
       net_device: "disable"
       proposal: "des-sha256"       # Mantenemos el fix de encriptacion
       dhgrp: "14"
-      remote_gw: "192.168.2.99"
+      remote_gw: "10.100.100.115"
       psksecret: "{{ vpn_psk }}"
       nattraversal: "disable"
 
