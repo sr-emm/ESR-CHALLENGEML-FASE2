@@ -6,6 +6,7 @@
   collections:
     - fortinet.fortios
   
+  # Cargamos variables por si acaso, pero "quemaremos" los valores críticos aquí mismo
   vars_files:
     - group_vars/all.yml
 
@@ -16,15 +17,15 @@
         state: "present"
         vpn_ipsec_phase1_interface:
           name: "{{ vpn_name }}"
-          interface: "{{ fg_wan_intf }}"
+          # CORRECCIÓN: Usar el nombre de variable del Formulario
+          interface: "{{ fg_wan_interface }}"
           ike_version: "2"
           peertype: "any"
           net_device: "disable"
-          proposal: "{{ phase1_proposal }}"
+          # CORRECCIÓN: Usar el nombre de variable del Perfil Python
+          proposal: "{{ phase1_prop }}"
           dhgrp: "{{ dh_group }}"
-          # --- CORRECCIÓN AQUÍ: Usamos la variable directa de Python ---
-          remote_gw: "{{ fg_remote_gw }}" 
-          # -----------------------------------------------------------
+          remote_gw: "{{ fg_remote_gw }}"
           psksecret: "{{ vpn_psk }}"
           nattraversal: "disable"
 
@@ -35,17 +36,19 @@
         vpn_ipsec_phase2_interface:
           name: "{{ vpn_name }}-P2"
           phase1name: "{{ vpn_name }}"
-          proposal: "{{ phase2_proposal }}"
+          # CORRECCIÓN: Usar el nombre de variable del Perfil Python
+          proposal: "{{ phase2_prop }}"
           dhgrp: "{{ dh_group }}"
           keylifeseconds: 3600
           src_subnet: "0.0.0.0 0.0.0.0"
           dst_subnet: "0.0.0.0 0.0.0.0"
           auto_negotiate: "enable"
 
-- name: Despliegue Palo Alto (Stub)
+- name: Despliegue Palo Alto (Stub de Validación)
   hosts: paloaltos
   connection: local
   gather_facts: no
   tasks:
     - debug:
-        msg: "Configuracion lista para Palo Alto usando perfil {{ pa_enc_algo }}/{{ pa_auth_algo }}"
+        # CORRECCIÓN: Variables de Palo Alto corregidas
+        msg: "Configuracion lista para Palo Alto usando perfil {{ palo_enc }}/{{ palo_auth }}"
