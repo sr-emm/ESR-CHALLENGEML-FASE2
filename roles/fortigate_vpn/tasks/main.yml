@@ -36,23 +36,22 @@
     vpn_ipsec_phase1_interface:
       name: "S2S-FG-PA"
 
-- name: 1.b CREAR - Configurar Phase 1 (Bulletproof)
+- name: 1.b CREAR - Configurar Phase 1 (Low Encryption Fix)
   fortios_vpn_ipsec_phase1_interface:
     vdom: "root"
     state: "present"
     vpn_ipsec_phase1_interface:
       name: "S2S-FG-PA"
-      interface: "port1"
+      interface: "port2"           # Mantenemos port2 que sabemos que funciona
       ike_version: "2"
-      # Quitamos 'type' y 'wizard_type' para que use defaults
       peertype: "any"
       net_device: "disable"
-      proposal: "aes256-sha256"
-      # DH Group como lista (algunas versiones lo prefieren así)
+      # --- CAMBIO CRÍTICO: Usar lo que soporta tu VM ---
+      proposal: "des-sha256"
+      # -------------------------------------------------
       dhgrp: "14"
       remote_gw: "192.168.2.99"
       psksecret: "{{ vpn_psk }}"
-      # Nattraversal disable para simplificar la negociación inicial
       nattraversal: "disable"
 
 - name: 2. Configurar Phase 2 (IPSec Tunnel)
@@ -62,9 +61,11 @@
     vpn_ipsec_phase2_interface:
       name: "S2S-FG-PA-P2"
       phase1name: "S2S-FG-PA"
-      proposal: "aes256-sha256"
+      # --- CAMBIO CRÍTICO: Debe coincidir con Phase 1 ---
+      proposal: "des-sha256"
+      # --------------------------------------------------
       dhgrp: "14"
-      keylifeseconds: 3600         # CRITICO para Palo Alto
+      keylifeseconds: 3600
       src_subnet: "0.0.0.0 0.0.0.0"
       dst_subnet: "0.0.0.0 0.0.0.0"
       auto_negotiate: "enable"
