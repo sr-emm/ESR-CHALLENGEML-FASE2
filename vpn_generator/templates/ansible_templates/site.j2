@@ -11,36 +11,34 @@
 
   tasks:
     # ----------------------------------------------------
-    # TAREAS DE INTERFACES LAN (Ahora Dinámicas)
+    # TAREAS DE INTERFACES LAN (Variables Corregidas)
     # ----------------------------------------------------
-    - name: Configurar LAN 1 ({{ fg_lan1_intf }})
+    - name: Configurar LAN 1 ({{ fg_lan1_interface }})
       fortios_system_interface:
         vdom: "root"
         state: "present"
         system_interface:
-          name: "{{ fg_lan1_intf }}"  # Variable dinámica
+          name: "{{ fg_lan1_interface }}"  # <--- CORREGIDO: Usa nombre directo del HTML
           vdom: "root"
           mode: "static"
-          ip: "{{ fg_lan1_cidr | replace('/', ' ') }}" # Truco para separar IP y Mask si es necesario, o pasar CIDR si la colección lo soporta. Forti prefiere "IP Mask".
-          # NOTA: En producción idealmente separaríamos IP y Máscara en Python
-          # Para este ejemplo asumimos que el usuario pone formato compatible o usamos 'allowaccess'
+          ip: "{{ fg_lan1_ip | replace('/', ' ') }}" # Truco para formato "IP Mask"
           allowaccess: "ping,https,ssh"
           alias: "LAN_1_Generada"
 
-    - name: Configurar LAN 2 ({{ fg_lan2_intf }})
+    - name: Configurar LAN 2 ({{ fg_lan2_interface }})
       fortios_system_interface:
         vdom: "root"
         state: "present"
         system_interface:
-          name: "{{ fg_lan2_intf }}"
+          name: "{{ fg_lan2_interface }}"  # <--- CORREGIDO
           vdom: "root"
           mode: "static"
+          ip: "{{ fg_lan2_ip | replace('/', ' ') }}"
           allowaccess: "ping"
           alias: "LAN_2_Generada"
-          # Nota: La IP se configuraría igual que arriba
 
     # ----------------------------------------------------
-    # TAREAS VPN (Ya corregidas)
+    # TAREAS VPN
     # ----------------------------------------------------
     - name: Configurar VPN Phase 1
       fortios_vpn_ipsec_phase1_interface:
@@ -48,11 +46,11 @@
         state: "present"
         vpn_ipsec_phase1_interface:
           name: "{{ vpn_name }}"
-          interface: "{{ fg_wan_intf }}"
+          interface: "{{ fg_wan_interface }}" # <--- CORREGIDO
           ike_version: "2"
           peertype: "any"
           net_device: "disable"
-          proposal: "{{ phase1_proposal }}"
+          proposal: "{{ phase1_prop }}"
           dhgrp: "{{ dh_group }}"
           remote_gw: "{{ fg_remote_gw }}" 
           psksecret: "{{ vpn_psk }}"
@@ -80,8 +78,8 @@
           policyid: "100"
           name: "LAN-to-VPN"
           srcintf:
-            - name: "{{ fg_lan1_intf }}" # Dinámico
-            - name: "{{ fg_lan2_intf }}" # Dinámico
+            - name: "{{ fg_lan1_interface }}"
+            - name: "{{ fg_lan2_interface }}"
           dstintf:
             - name: "{{ vpn_name }}"
           srcaddr:
@@ -95,4 +93,33 @@
           nat: "disable"
           logtraffic: "all"
 
-# ... (El resto del playbook de políticas de entrada sigue la misma lógica)
+    - name: Politica Firewall Entrada
+      fortios_firewall_policy:
+        vdom: "root"
+        state: "present"
+        firewall_policy:
+          policyid: "101"
+          name: "VPN-to-LAN"
+          srcintf:
+            - name: "{{ vpn_name }}"
+          dstintf:
+            - name: "{{ fg_lan1_interface }}"
+            - name: "{{ fg_lan2_interface }}"
+          srcaddr:
+            - name: "all"
+          dstaddr:
+            - name: "all"
+          action: "accept"
+          schedule: "always"
+          service:
+            - name: "ALL"
+          nat: "disable"
+          logtraffic: "all"
+
+- name: Despliegue Palo Alto (Stub)
+  hosts: paloaltos
+  connection: local
+  gather_facts: no
+  tasks:
+    - debug:
+        msg: "Configuracion lista para Palo Alto en {{ pa_wan_interface }} usando perfil {{ palo_enc }}/{{ palo_auth }}"

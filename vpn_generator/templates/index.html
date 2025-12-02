@@ -10,7 +10,6 @@
         .card { border: 1px solid #30363d; background-color: #161b22; }
         .card-header { font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
         
-        /* Branding */
         .border-forti { border-color: #dc3545 !important; }
         .text-forti { color: #dc3545 !important; }
         .bg-forti { background-color: #dc3545 !important; }
@@ -19,26 +18,17 @@
         .text-palo { color: #0d6efd !important; }
         .bg-palo { background-color: #0d6efd !important; }
 
-        /* Inputs estilo consola */
         .form-control, .form-select { 
-            background-color: #0d1117; 
-            color: #c9d1d9; 
-            border: 1px solid #30363d;
+            background-color: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
             font-family: 'Courier New', Courier, monospace;
         }
         .form-control:focus, .form-select:focus { 
-            background-color: #0d1117; 
-            color: #fff; 
-            border-color: #58a6ff; 
+            background-color: #0d1117; color: #fff; border-color: #58a6ff; 
             box-shadow: 0 0 0 0.25rem rgba(88, 166, 255, 0.25);
         }
         
-        /* Estilo para opciones deshabilitadas */
         option:disabled { color: #5a5a5a; background-color: #1c1c1c; }
-        
         .hidden-field { display: none; }
-        
-        /* Validación Visual */
         input:invalid { border-color: #dc3545; background-image: none; }
         input:valid { border-color: #198754; background-image: none; }
     </style>
@@ -48,7 +38,7 @@
 <div class="container py-5">
     <div class="text-center mb-5">
         <h1 class="display-5 fw-bold text-light">🚀 Generador VPN: <span class="text-success">Ansible</span></h1>
-        <p class="lead text-secondary">Herramienta de configuración Multi-Vendor Automatizada.</p>
+        <p class="lead text-secondary">Configuración con validación de interfaces.</p>
     </div>
 
     <form method="POST" action="/">
@@ -75,7 +65,7 @@
                         </div>
 
                         <div id="fg_static_fields" class="hidden-field border-start border-forti ps-3 mb-3">
-                            <label class="form-label text-secondary small">IP WAN Estática / Máscara</label>
+                            <label class="form-label text-secondary small">IP WAN / Máscara</label>
                             <input type="text" class="form-control mb-2" name="fg_wan_ip" placeholder="10.100.100.114/24">
                             <label class="form-label text-secondary small">Gateway</label>
                             <input type="text" class="form-control" name="fg_wan_gw" placeholder="10.100.100.1">
@@ -137,7 +127,7 @@
                         </div>
 
                         <div id="pa_static_fields" class="hidden-field border-start border-palo ps-3 mb-3">
-                            <label class="form-label text-secondary small">IP WAN Estática / Máscara</label>
+                            <label class="form-label text-secondary small">IP WAN / Máscara</label>
                             <input type="text" class="form-control mb-2" name="pa_wan_ip" placeholder="10.100.100.115/24">
                             <label class="form-label text-secondary small">Gateway</label>
                             <input type="text" class="form-control" name="pa_wan_gw" placeholder="10.100.100.1">
@@ -188,13 +178,16 @@
                     </div>
                     
                     <div class="col-md-4 mb-3">
-                        <label class="form-label text-warning fw-bold">PSK (Segura)</label>
+                        <label class="form-label text-warning fw-bold">PSK (Sin #)</label>
                         <input type="text" class="form-control" name="vpn_psk" 
-                               value="Fortinet#VPN_2025" 
+                               value="Fortinet_VPN_2025" 
                                required 
-                               pattern="[a-zA-Z0-9@!_.\-+#]+" 
-                               title="Permitidos: Letras, números y @ ! - _ . + #"
+                               pattern="[a-zA-Z0-9@!_.\-+]+" 
+                               title="Permitidos: Letras, números y @ ! - _ . +"
                                oninput="validatePSK(this)">
+                        <div class="form-text text-secondary">
+                            Símbolos seguros permitidos: <span class="text-white">@ ! - _ . +</span> (Sin #)
+                        </div>
                     </div>
 
                     <div class="col-md-4 mb-3">
@@ -241,12 +234,15 @@
         }
     }
     
+    // VALIDACIÓN PSK: Elimina # y Comillas
     function validatePSK(input) {
-        if (input.value.includes('"') || input.value.includes("'")) {
-            input.value = input.value.replace(/["']/g, '');
+        // Bloquear comillas y #
+        if (input.value.includes('"') || input.value.includes("'") || input.value.includes("#")) {
+            input.value = input.value.replace(/["'#]/g, '');
             input.classList.add('is-invalid');
         }
-        var regex = /[^a-zA-Z0-9@!_.\-+#]/g;
+        
+        var regex = /[^a-zA-Z0-9@!_.\-+]/g;
         if (regex.test(input.value)) {
             input.value = input.value.replace(regex, '');
             input.classList.add('is-invalid');
@@ -259,11 +255,9 @@
         let selects = document.querySelectorAll('.' + prefix + '-selector');
         let selectedValues = [];
 
-        selects.forEach(sel => {
-            selectedValues.push(sel.value);
-        });
+        selects.forEach(sel => { selectedValues.push(sel.value); });
 
-        selects.forEach((sel, index) => {
+        selects.forEach((sel) => {
             let currentVal = sel.value;
             for (let i = 0; i < sel.options.length; i++) {
                 let opt = sel.options[i];
@@ -271,7 +265,7 @@
                     opt.disabled = true;
                     let shortName = opt.value.replace("ethernet", "eth");
                     if (prefix === 'fg') shortName = opt.value;
-                    opt.innerText = shortName + " (En Uso)"; 
+                    opt.innerText = shortName + " (Ocupado)"; 
                 } else {
                     opt.disabled = false;
                     let shortName = opt.value.replace("ethernet", "eth");
