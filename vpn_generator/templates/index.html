@@ -28,7 +28,7 @@
             box-shadow: 0 0 0 0.25rem rgba(88, 166, 255, 0.25);
         }
         
-        /* Estilo para opciones deshabilitadas */
+        /* Estilo para opciones deshabilitadas (ya usadas) */
         option:disabled { color: #5a5a5a; background-color: #1c1c1c; }
         
         .hidden-field { display: none; }
@@ -118,7 +118,7 @@
                             <label class="form-label">Interfaz WAN</label>
                             <select class="form-select pa-selector" name="pa_wan_interface" onchange="updatePorts('pa')">
                                 {% for i in range(1, 17) %}
-                                <option value="ethernet1/{{ i }}" {% if i==1 %}selected{% endif %}>ethernet1/{{ i }}</option>
+                                <option value="ethernet1/{{ i }}" {% if i==1 %}selected{% endif %}>eth1/{{ i }}</option>
                                 {% endfor %}
                             </select>
                         </div>
@@ -178,12 +178,18 @@
                         <label class="form-label text-warning fw-bold">Nombre del Túnel</label>
                         <input type="text" class="form-control" name="vpn_name" value="S2S-AUTO" required>
                     </div>
+                    
                     <div class="col-md-4 mb-3">
                         <label class="form-label text-warning fw-bold">PSK</label>
-                        <input type="text" class="form-control" name="vpn_psk" value="FortinetVPN2025" required pattern="[a-zA-Z0-9@!_.\-+#]+" oninput="validatePSK(this)">
+                        <input type="text" class="form-control" name="vpn_psk" 
+                               value="FortinetVPN2025" 
+                               required 
+                               pattern="[a-zA-Z0-9@!_.\-+#]+" 
+                               oninput="validatePSK(this)">
                     </div>
+
                     <div class="col-md-4 mb-3">
-                        <label class="form-label text-warning fw-bold">DH Group</label>
+                        <label class="form-label text-warning fw-bold">Diffie-Hellman (DH)</label>
                         <select class="form-select border-warning" name="dh_group_select">
                             <option value="14" selected>Group 14</option>
                             <option value="19">Group 19</option>
@@ -192,6 +198,7 @@
                         </select>
                     </div>
                 </div>
+
                 <div class="row">
                     <div class="col-md-12">
                         <label class="form-label text-warning fw-bold">Perfil de Encriptación</label>
@@ -214,7 +221,6 @@
 </div>
 
 <script>
-    // Lógica para bloquear IPs si es DHCP
     function toggleStatic(site) {
         var checkbox = document.getElementById(site + '_dhcp_check');
         var fields = document.getElementById(site + '_static_fields');
@@ -226,7 +232,6 @@
         }
     }
     
-    // Validación PSK
     function validatePSK(input) {
         if (input.value.includes('"') || input.value.includes("'")) {
             input.value = input.value.replace(/["']/g, '');
@@ -241,40 +246,38 @@
         }
     }
 
-    // --- NUEVA LÓGICA: Validación Cruzada de Puertos ---
+    // Validación Cruzada de Puertos (Actualizada para Visual eth1/x)
     function updatePorts(prefix) {
-        // Obtener todos los selectores de esa marca (clase fg-selector o pa-selector)
         let selects = document.querySelectorAll('.' + prefix + '-selector');
         let selectedValues = [];
 
-        // 1. Recopilar valores seleccionados actualmente
         selects.forEach(sel => {
             selectedValues.push(sel.value);
         });
 
-        // 2. Iterar sobre cada selector para habilitar/deshabilitar opciones
         selects.forEach((sel, index) => {
             let currentVal = sel.value;
-            // Recorrer todas las opciones del desplegable
             for (let i = 0; i < sel.options.length; i++) {
                 let opt = sel.options[i];
-                
-                // Si el valor está seleccionado en OTRO dropdown, deshabilitarlo
-                // Pero si es el valor seleccionado en ESTE dropdown, mantenerlo habilitado
+                // Usamos el 'value' (ethernet1/1) para la lógica, no el texto visual
                 if (selectedValues.includes(opt.value) && opt.value !== currentVal) {
                     opt.disabled = true;
-                    // Estilo visual opcional para opciones deshabilitadas
-                    opt.innerText = opt.value + " (En uso)"; 
+                    // Actualizar el texto visual para mostrar estado
+                    // Necesitamos reconstruir el texto corto (eth1/x) basado en el value largo
+                    let shortName = opt.value.replace("ethernet", "eth"); 
+                    if (prefix === 'fg') shortName = opt.value; // Forti no cambia
+                    
+                    opt.innerText = shortName + " (Ocupado)"; 
                 } else {
                     opt.disabled = false;
-                    // Restaurar texto original (quitando "En uso" si existía)
-                    opt.innerText = opt.value;
+                    let shortName = opt.value.replace("ethernet", "eth");
+                    if (prefix === 'fg') shortName = opt.value;
+                    opt.innerText = shortName;
                 }
             }
         });
     }
 
-    // Inicializar al cargar
     document.addEventListener('DOMContentLoaded', function() {
         toggleStatic('fg');
         toggleStatic('pa');
