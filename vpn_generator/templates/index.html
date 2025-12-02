@@ -19,21 +19,28 @@
         .text-palo { color: #0d6efd !important; }
         .bg-palo { background-color: #0d6efd !important; }
 
+        /* Inputs estilo consola */
         .form-control, .form-select { 
-            background-color: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
+            background-color: #0d1117; 
+            color: #c9d1d9; 
+            border: 1px solid #30363d;
             font-family: 'Courier New', Courier, monospace;
         }
         .form-control:focus, .form-select:focus { 
-            background-color: #0d1117; color: #fff; border-color: #58a6ff; 
+            background-color: #0d1117; 
+            color: #fff; 
+            border-color: #58a6ff; 
             box-shadow: 0 0 0 0.25rem rgba(88, 166, 255, 0.25);
         }
         
-        /* Estilo para opciones deshabilitadas (ya usadas) */
+        /* Estilo para opciones deshabilitadas */
         option:disabled { color: #5a5a5a; background-color: #1c1c1c; }
         
         .hidden-field { display: none; }
-        input:invalid { border-color: #dc3545; }
-        input:valid { border-color: #198754; }
+        
+        /* Validación Visual */
+        input:invalid { border-color: #dc3545; background-image: none; }
+        input:valid { border-color: #198754; background-image: none; }
     </style>
 </head>
 <body>
@@ -41,7 +48,7 @@
 <div class="container py-5">
     <div class="text-center mb-5">
         <h1 class="display-5 fw-bold text-light">🚀 Generador VPN: <span class="text-success">Ansible</span></h1>
-        <p class="lead text-secondary">Configuración con validación de interfaces.</p>
+        <p class="lead text-secondary">Herramienta de configuración Multi-Vendor Automatizada.</p>
     </div>
 
     <form method="POST" action="/">
@@ -55,8 +62,9 @@
                         <div class="mb-3">
                             <label class="form-label">Interfaz WAN</label>
                             <select class="form-select fg-selector" name="fg_wan_interface" onchange="updatePorts('fg')">
-                                {% for i in range(1, 17) %}
-                                <option value="port{{ i }}" {% if i==1 %}selected{% endif %}>port{{ i }}</option>
+                                <option value="port1" selected>port1</option>
+                                {% for i in range(2, 17) %}
+                                <option value="port{{ i }}">port{{ i }}</option>
                                 {% endfor %}
                             </select>
                         </div>
@@ -67,7 +75,7 @@
                         </div>
 
                         <div id="fg_static_fields" class="hidden-field border-start border-forti ps-3 mb-3">
-                            <label class="form-label text-secondary small">IP WAN / Máscara</label>
+                            <label class="form-label text-secondary small">IP WAN Estática / Máscara</label>
                             <input type="text" class="form-control mb-2" name="fg_wan_ip" placeholder="10.100.100.114/24">
                             <label class="form-label text-secondary small">Gateway</label>
                             <input type="text" class="form-control" name="fg_wan_gw" placeholder="10.100.100.1">
@@ -129,7 +137,7 @@
                         </div>
 
                         <div id="pa_static_fields" class="hidden-field border-start border-palo ps-3 mb-3">
-                            <label class="form-label text-secondary small">IP WAN / Máscara</label>
+                            <label class="form-label text-secondary small">IP WAN Estática / Máscara</label>
                             <input type="text" class="form-control mb-2" name="pa_wan_ip" placeholder="10.100.100.115/24">
                             <label class="form-label text-secondary small">Gateway</label>
                             <input type="text" class="form-control" name="pa_wan_gw" placeholder="10.100.100.1">
@@ -180,21 +188,22 @@
                     </div>
                     
                     <div class="col-md-4 mb-3">
-                        <label class="form-label text-warning fw-bold">PSK</label>
+                        <label class="form-label text-warning fw-bold">PSK (Segura)</label>
                         <input type="text" class="form-control" name="vpn_psk" 
-                               value="FortinetVPN2025" 
+                               value="Fortinet#VPN_2025" 
                                required 
                                pattern="[a-zA-Z0-9@!_.\-+#]+" 
+                               title="Permitidos: Letras, números y @ ! - _ . + #"
                                oninput="validatePSK(this)">
                     </div>
 
                     <div class="col-md-4 mb-3">
                         <label class="form-label text-warning fw-bold">Diffie-Hellman (DH)</label>
                         <select class="form-select border-warning" name="dh_group_select">
-                            <option value="14" selected>Group 14</option>
-                            <option value="19">Group 19</option>
-                            <option value="21">Group 21</option>
-                            <option value="5">Group 5</option>
+                            <option value="14" selected>Group 14 (2048-bit) - Compatible</option>
+                            <option value="19">Group 19 (256-bit ECP) - Rápido</option>
+                            <option value="21">Group 21 (521-bit ECP) - Muy Seguro</option>
+                            <option value="5">Group 5 (Legacy) - Fallback</option>
                         </select>
                     </div>
                 </div>
@@ -246,7 +255,6 @@
         }
     }
 
-    // Validación Cruzada de Puertos (Actualizada para Visual eth1/x)
     function updatePorts(prefix) {
         let selects = document.querySelectorAll('.' + prefix + '-selector');
         let selectedValues = [];
@@ -259,15 +267,11 @@
             let currentVal = sel.value;
             for (let i = 0; i < sel.options.length; i++) {
                 let opt = sel.options[i];
-                // Usamos el 'value' (ethernet1/1) para la lógica, no el texto visual
                 if (selectedValues.includes(opt.value) && opt.value !== currentVal) {
                     opt.disabled = true;
-                    // Actualizar el texto visual para mostrar estado
-                    // Necesitamos reconstruir el texto corto (eth1/x) basado en el value largo
-                    let shortName = opt.value.replace("ethernet", "eth"); 
-                    if (prefix === 'fg') shortName = opt.value; // Forti no cambia
-                    
-                    opt.innerText = shortName + " (Ocupado)"; 
+                    let shortName = opt.value.replace("ethernet", "eth");
+                    if (prefix === 'fg') shortName = opt.value;
+                    opt.innerText = shortName + " (En Uso)"; 
                 } else {
                     opt.disabled = false;
                     let shortName = opt.value.replace("ethernet", "eth");
