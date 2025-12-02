@@ -155,32 +155,32 @@
 
   tasks:
     # --- 1. Interfaces ---
-    - name: Configurar WAN ({{ pa_wan_interface }})
+    - name: Configurar WAN ({{ pa_wan_intf }})
       panos_interface:
         provider: "{{ pa_provider }}"
-        if_name: "{{ pa_wan_interface }}"
+        if_name: "{{ pa_wan_intf }}"
         mode: "layer3"
-        enable_dhcp: "{{ 'true' if pa_is_dhcp else 'false' }}"
-        create_default_route: "{{ 'true' if pa_is_dhcp else 'false' }}"
-        ip: "{{ [pa_wan_ip] if not pa_is_dhcp else omit }}"
+        enable_dhcp: "{{ 'true' if pa_mode == 'dhcp' else 'false' }}"
+        create_default_route: "{{ 'true' if pa_mode == 'dhcp' else 'false' }}"
+        ip: "{{ [pa_wan_ip] if pa_mode == 'static' else omit }}"
         vr_name: "default"
         zone_name: "untrust"
 
-    - name: Configurar LAN 1 ({{ pa_lan1_interface }})
+    - name: Configurar LAN 1 ({{ pa_lan1_intf }})
       panos_interface:
         provider: "{{ pa_provider }}"
-        if_name: "{{ pa_lan1_interface }}"
+        if_name: "{{ pa_lan1_intf }}"
         mode: "layer3"
-        ip: ["{{ pa_lan1_ip }}"]
+        ip: ["{{ pa_lan1_cidr }}"]
         vr_name: "default"
         zone_name: "trust"
 
-    - name: Configurar LAN 2 ({{ pa_lan2_interface }})
+    - name: Configurar LAN 2 ({{ pa_lan2_intf }})
       panos_interface:
         provider: "{{ pa_provider }}"
-        if_name: "{{ pa_lan2_interface }}"
+        if_name: "{{ pa_lan2_intf }}"
         mode: "layer3"
-        ip: ["{{ pa_lan2_ip }}"]
+        ip: ["{{ pa_lan2_cidr }}"]
         vr_name: "default"
         zone_name: "trust"
 
@@ -199,8 +199,8 @@
         provider: "{{ pa_provider }}"
         name: "{{ vpn_name }}-IKE"
         dh_group: ["group{{ dh_group }}"]
-        encryption: ["{{ palo_enc }}"]
-        hash: ["{{ palo_auth }}"]
+        encryption: ["{{ pa_enc_algo }}"]
+        hash: ["{{ pa_auth_algo }}"]
         lifetime_seconds: 43200
 
     - name: Perfil IPsec (Phase 2)
@@ -208,8 +208,8 @@
         provider: "{{ pa_provider }}"
         name: "{{ vpn_name }}-IPSEC"
         dh_group: "group{{ dh_group }}"
-        esp_encryption: ["{{ palo_enc }}"]
-        esp_authentication: ["{{ palo_auth }}"]
+        esp_encryption: ["{{ pa_enc_algo }}"]
+        esp_authentication: ["{{ pa_auth_algo }}"]
         lifetime_seconds: 3600
 
     # --- 3. VPN ---
@@ -218,7 +218,7 @@
         provider: "{{ pa_provider }}"
         name: "{{ vpn_name }}-GW"
         version: "ikev2"
-        interface: "{{ pa_wan_interface }}"
+        interface: "{{ pa_wan_intf }}"
         peer_ip_value: "{{ pa_peer_ip }}"
         pre_shared_key: "{{ vpn_psk }}"
         crypto_profile: "{{ vpn_name }}-IKE"
@@ -246,10 +246,9 @@
       panos_static_route:
         provider: "{{ pa_provider }}"
         name: "Ruta-a-SiteA"
-        # Destino: Las LANs del Fortigate. Usamos LAN1 como ejemplo de ruta principal
-        destination: "{{ fg_lan1_ip }}" 
+        destination: "{{ fg_lan1_cidr }}" 
         nexthop_type: "ip-address"
-        nexthop: "{{ pa_nexthop_ip }}"
+        nexthop: "169.255.1.1"
         interface: "tunnel.1"
         virtual_router: "default"
 
