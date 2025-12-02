@@ -4,31 +4,21 @@ from flask import Flask, render_template, request, send_file
 
 app = Flask(__name__)
 
-# --- 1. PERFILES DE COMPATIBILIDAD ---
-# Esto evita errores humanos. Si eliges "Lab", forzamos DES en ambos extremos.
 VPN_PROFILES = {
     "lab_legacy": {
-        "name": "🧪 Lab / Legacy (Compatibilidad LENC)",
+        "name": "🧪 Lab / Legacy (DES-SHA256)",
         "phase1_prop": "des-sha256",
         "phase2_prop": "des-sha256",
         "dh_group": "14",
-        "palo_enc": "des-cbc",  # Traducción para Palo Alto
+        "palo_enc": "des-cbc",
         "palo_auth": "sha256"
     },
     "production_std": {
-        "name": "🏭 Producción Estándar (AES-128)",
+        "name": "🏭 Producción (AES128-SHA256)",
         "phase1_prop": "aes128-sha256",
         "phase2_prop": "aes128-sha256",
         "dh_group": "14",
         "palo_enc": "aes-128-cbc",
-        "palo_auth": "sha256"
-    },
-    "high_security": {
-        "name": "🛡️ Alta Seguridad (AES-256)",
-        "phase1_prop": "aes256-sha256",
-        "phase2_prop": "aes256-sha256",
-        "dh_group": "21",
-        "palo_enc": "aes-256-cbc",
         "palo_auth": "sha256"
     }
 }
@@ -36,60 +26,54 @@ VPN_PROFILES = {
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
-        # A. Capturar datos del formulario HTML
-        # Convertimos a dict mutable para poder inyectar valores
         data = request.form.to_dict()
         
-        # B. Aplicar el Perfil de Seguridad seleccionado
-        profile_key = data.get('vpn_profile', 'lab_legacy')
-        profile_data = VPN_PROFILES[profile_key]
-        
-        # Fusionamos los datos del perfil en el diccionario de datos
-        data.update(profile_data)
+        # Inyectar perfil de seguridad
+        data.update(VPN_PROFILES[data.get('vpn_profile', 'lab_legacy')])
 
-        # C. Lógica para IPs de Túnel (Máscara /32 para FortiOS 7.x)
-        # Calculamos las IPs remotas/locales basándonos en la red base ingresada
-        # (Nota: En un app real, usaríamos la librería 'ipaddress' para calcular esto dinámicamente)
-        # Aquí asumimos que el usuario mete los datos correctos o usamos defaults seguros.
+        # Normalizar booleanos para Jinja2
+        # Si el checkbox no viene en el form, es False (Static IP)
+        data['fg_is_dhcp'] = 'fg_is_dhcp' in data
+        data['pa_is_dhcp'] = 'pa_is_dhcp' in data
+
+        # Lógica de Peer IP (Quién es el vecino)
+        # Si es Estático, usamos la IP que el usuario escribió.
+        # Si es DHCP, usamos un default o intentamos adivinar (para lab se usa hardcode si es dhcp)
         
-        # D. Generar el ZIP en memoria (sin guardar en disco)
+        if not data['fg_is_dhcp']:
+            # Si FG es estático, la Peer IP para Palo Alto es la IP del FG (quitando la máscara)
+            data['pa_peer_ip'] = data['fg_wan_ip'].split('/')[0]
+        else:
+            # Si FG es DHCP (Lab), asumimos la IP del lab .114
+            data['pa_peer_ip'] = "10.100.100.114"
+
+        if not data['pa_is_dhcp']:
+            # Si PA es estático, la Remote GW para FG es la IP del PA
+            data['fg_remote_gw'] = data['pa_wan_ip'].split('/')[0]
+        else:
+            # Si PA es DHCP (Lab), asumimos la IP del lab .115
+            data['fg_remote_gw'] = "10.100.100.115"
+
+        # Generar ZIP
         memory_file = io.BytesIO()
         with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-            
-            # 1. Generar Inventory
-            inventory_content = render_template('ansible_templates/inventory.j2', **data)
-            zf.writestr('inventory/hosts.yml', inventory_content)
+            # Renderizar plantillas
+            for template in ['inventory.j2', 'all_vars.j2', 'site.j2']:
+                content = render_template(f'ansible_templates/{template}', **data)
+                # Mapear nombre de archivo destino
+                dest_name = template.replace('.j2', '.yml')
+                if template == 'inventory.j2': dest_name = 'inventory/hosts.yml'
+                if template == 'all_vars.j2': dest_name = 'group_vars/all.yml'
+                
+                zf.writestr(dest_name, content)
 
-            # 2. Generar Group Vars (All)
-            vars_content = render_template('ansible_templates/all_vars.j2', **data)
-            zf.writestr('group_vars/all.yml', vars_content)
+            # Agregar config base
+            zf.writestr('ansible.cfg', "[defaults]\ninventory=./inventory/hosts.yml\nhost_key_checking=False\n")
 
-            # 3. Generar Playbook Maestro
-            site_content = render_template('ansible_templates/site.j2', **data)
-            zf.writestr('site.yml', site_content)
-
-            # 4. Generar un ansible.cfg básico para que funcione out-of-the-box
-            ansible_cfg = """[defaults]
-inventory = ./inventory/hosts.yml
-host_key_checking = False
-retry_files_enabled = False
-deprecation_warnings = False
-interpreter_python = auto_silent
-timeout = 30
-"""
-            zf.writestr('ansible.cfg', ansible_cfg)
-
-        # E. Enviar el archivo al navegador
         memory_file.seek(0)
-        return send_file(
-            memory_file,
-            download_name=f"ansible_vpn_{profile_key}.zip",
-            as_attachment=True
-        )
+        return send_file(memory_file, download_name="ansible_vpn_config.zip", as_attachment=True)
 
-    # Si es GET, mostramos el formulario
     return render_template('index.html', profiles=VPN_PROFILES)
 
 if __name__ == '__main__':
-    # Escucha en todas las interfaces para que puedas entrar desde tu PC
     app.run(debug=True, host='0.0.0.0', port=5000)
