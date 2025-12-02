@@ -14,27 +14,27 @@
 
   tasks:
     # --- 1. Interfaces LAN ---
-    - name: Configurar LAN 1 ({{ fg_lan1_intf }})
+    - name: Configurar LAN 1 ({{ fg_lan1_interface }})
       fortios_system_interface:
         vdom: "root"
         state: "present"
         system_interface:
-          name: "{{ fg_lan1_intf }}"
+          name: "{{ fg_lan1_interface }}"
           vdom: "root"
           mode: "static"
-          ip: "{{ fg_lan1_cidr | replace('/', ' ') }}"
+          ip: "{{ fg_lan1_ip | replace('/', ' ') }}"
           allowaccess: "ping,https,ssh"
           alias: "LAN_1_Generada"
 
-    - name: Configurar LAN 2 ({{ fg_lan2_intf }})
+    - name: Configurar LAN 2 ({{ fg_lan2_interface }})
       fortios_system_interface:
         vdom: "root"
         state: "present"
         system_interface:
-          name: "{{ fg_lan2_intf }}"
+          name: "{{ fg_lan2_interface }}"
           vdom: "root"
           mode: "static"
-          ip: "{{ fg_lan2_cidr | replace('/', ' ') }}"
+          ip: "{{ fg_lan2_ip | replace('/', ' ') }}"
           allowaccess: "ping"
           alias: "LAN_2_Generada"
 
@@ -45,11 +45,11 @@
         state: "present"
         vpn_ipsec_phase1_interface:
           name: "{{ vpn_name }}"
-          interface: "{{ fg_wan_intf }}"
+          interface: "{{ fg_wan_interface }}"
           ike_version: "2"
           peertype: "any"
           net_device: "disable"
-          proposal: "{{ phase1_proposal }}"
+          proposal: "{{ phase1_prop }}"
           dhgrp: "{{ dh_group }}"
           remote_gw: "{{ fg_remote_gw }}" 
           psksecret: "{{ vpn_psk }}"
@@ -80,7 +80,7 @@
           ip: "{{ fg_tunnel_ip }}"
           allowaccess: "ping"
           type: "tunnel"
-          interface: "{{ fg_wan_intf }}"
+          interface: "{{ fg_wan_interface }}"
           remote_ip: "{{ fg_remote_tunnel_ip }}"
 
     # --- 4. Routing y Políticas ---
@@ -90,7 +90,7 @@
         state: "present"
         router_static:
           seq_num: "10"
-          dst: "{{ pa_lan_supernet | replace('/', ' ') }}"
+          dst: "{{ pa_lan_subnet | replace('/', ' ') }}"
           device: "{{ vpn_name }}"
 
     - name: Politica Firewall (Salida)
@@ -101,8 +101,8 @@
           policyid: "100"
           name: "LAN-to-VPN"
           srcintf:
-            - name: "{{ fg_lan1_intf }}"
-            - name: "{{ fg_lan2_intf }}"
+            - name: "{{ fg_lan1_interface }}"
+            - name: "{{ fg_lan2_interface }}"
           dstintf:
             - name: "{{ vpn_name }}"
           srcaddr:
@@ -126,8 +126,8 @@
           srcintf:
             - name: "{{ vpn_name }}"
           dstintf:
-            - name: "{{ fg_lan1_intf }}"
-            - name: "{{ fg_lan2_intf }}"
+            - name: "{{ fg_lan1_interface }}"
+            - name: "{{ fg_lan2_interface }}"
           srcaddr:
             - name: "all"
           dstaddr:
@@ -154,38 +154,36 @@
     - group_vars/all.yml
 
   tasks:
-    # --- 1. Interfaces Físicas ---
-    - name: Configurar WAN ({{ pa_wan_intf }})
+    # --- 1. Interfaces ---
+    - name: Configurar WAN ({{ pa_wan_interface }})
       panos_interface:
         provider: "{{ pa_provider }}"
-        if_name: "{{ pa_wan_intf }}"
+        if_name: "{{ pa_wan_interface }}"
         mode: "layer3"
-        enable_dhcp: "{{ 'true' if pa_mode == 'dhcp' else 'false' }}"
-        create_default_route: "{{ 'true' if pa_mode == 'dhcp' else 'false' }}"
-        # Lógica Jinja2 para IP Estática si no es DHCP
-        ip: "{{ [pa_wan_ip] if pa_mode == 'static' else omit }}"
+        enable_dhcp: "{{ 'true' if pa_is_dhcp else 'false' }}"
+        create_default_route: "{{ 'true' if pa_is_dhcp else 'false' }}"
+        ip: "{{ [pa_wan_ip] if not pa_is_dhcp else omit }}"
         vr_name: "default"
         zone_name: "untrust"
 
-    - name: Configurar LAN 1 ({{ pa_lan1_intf }})
+    - name: Configurar LAN 1 ({{ pa_lan1_interface }})
       panos_interface:
         provider: "{{ pa_provider }}"
-        if_name: "{{ pa_lan1_intf }}"
+        if_name: "{{ pa_lan1_interface }}"
         mode: "layer3"
-        ip: ["{{ pa_lan1_cidr }}"]
+        ip: ["{{ pa_lan1_ip }}"]
         vr_name: "default"
         zone_name: "trust"
 
-    - name: Configurar LAN 2 ({{ pa_lan2_intf }})
+    - name: Configurar LAN 2 ({{ pa_lan2_interface }})
       panos_interface:
         provider: "{{ pa_provider }}"
-        if_name: "{{ pa_lan2_intf }}"
+        if_name: "{{ pa_lan2_interface }}"
         mode: "layer3"
-        ip: ["{{ pa_lan2_cidr }}"]
+        ip: ["{{ pa_lan2_ip }}"]
         vr_name: "default"
         zone_name: "trust"
 
-    # --- 2. Interfaz Túnel ---
     - name: Configurar Interfaz Túnel (tunnel.1)
       panos_interface:
         provider: "{{ pa_provider }}"
@@ -195,14 +193,14 @@
         vr_name: "default"
         zone_name: "VPN_Zone"
 
-    # --- 3. Perfiles Criptográficos (Match Fortinet) ---
+    # --- 2. Perfiles Criptográficos ---
     - name: Perfil IKE (Phase 1)
       panos_ike_crypto_profile:
         provider: "{{ pa_provider }}"
         name: "{{ vpn_name }}-IKE"
         dh_group: ["group{{ dh_group }}"]
-        encryption: ["{{ pa_enc_algo }}"]
-        hash: ["{{ pa_auth_algo }}"]
+        encryption: ["{{ palo_enc }}"]
+        hash: ["{{ palo_auth }}"]
         lifetime_seconds: 43200
 
     - name: Perfil IPsec (Phase 2)
@@ -210,17 +208,17 @@
         provider: "{{ pa_provider }}"
         name: "{{ vpn_name }}-IPSEC"
         dh_group: "group{{ dh_group }}"
-        esp_encryption: ["{{ pa_enc_algo }}"]
-        esp_authentication: ["{{ pa_auth_algo }}"]
+        esp_encryption: ["{{ palo_enc }}"]
+        esp_authentication: ["{{ palo_auth }}"]
         lifetime_seconds: 3600
 
-    # --- 4. VPN Objects ---
+    # --- 3. VPN ---
     - name: Configurar IKE Gateway
       panos_ike_gateway:
         provider: "{{ pa_provider }}"
         name: "{{ vpn_name }}-GW"
         version: "ikev2"
-        interface: "{{ pa_wan_intf }}"
+        interface: "{{ pa_wan_interface }}"
         peer_ip_value: "{{ pa_peer_ip }}"
         pre_shared_key: "{{ vpn_psk }}"
         crypto_profile: "{{ vpn_name }}-IKE"
@@ -235,7 +233,7 @@
         ipsec_profile: "{{ vpn_name }}-IPSEC"
         enable_tunneling: true
 
-    - name: Agregar Proxy ID Wildcard (Fix Route-Based)
+    - name: Agregar Proxy ID Wildcard
       panos_ipsec_tunnel_proxy_id:
         provider: "{{ pa_provider }}"
         tunnel_name: "{{ vpn_name }}"
@@ -243,43 +241,19 @@
         local: "0.0.0.0/0"
         remote: "0.0.0.0/0"
 
-    # --- 5. Routing ---
+    # --- 4. Routing ---
     - name: Ruta Estática hacia Site A
       panos_static_route:
         provider: "{{ pa_provider }}"
         name: "Ruta-a-SiteA"
-        destination: "{{ fg_lan1_cidr }}" # Rutear LAN 1 de Fortinet
+        # Destino: Las LANs del Fortigate. Usamos LAN1 como ejemplo de ruta principal
+        destination: "{{ fg_lan1_ip }}" 
         nexthop_type: "ip-address"
-        nexthop: "{{ fg_tunnel_ip.split(' ')[0] }}" # IP del Túnel FortiGate
+        nexthop: "{{ pa_nexthop_ip }}"
         interface: "tunnel.1"
         virtual_router: "default"
 
-    # --- 6. Políticas de Seguridad (Firewall) ---
-    - name: Política Trust a VPN (Salida)
-      panos_security_rule:
-        provider: "{{ pa_provider }}"
-        rule_name: "LAN-to-VPN"
-        source_zone: ["trust"]
-        destination_zone: ["VPN_Zone"]
-        source_ip: ["any"]
-        destination_ip: ["any"]
-        application: ["any"]
-        service: ["application-default"]
-        action: "allow"
-
-    - name: Política VPN a Trust (Entrada)
-      panos_security_rule:
-        provider: "{{ pa_provider }}"
-        rule_name: "VPN-to-LAN"
-        source_zone: ["VPN_Zone"]
-        destination_zone: ["trust"]
-        source_ip: ["any"]
-        destination_ip: ["any"]
-        application: ["any"]
-        service: ["application-default"]
-        action: "allow"
-
-    # --- 7. Commit ---
-    - name: COMMIT FINAL (Aplicar cambios en Palo Alto)
+    # --- 5. Commit ---
+    - name: COMMIT FINAL (Palo Alto)
       panos_commit:
         provider: "{{ pa_provider }}"

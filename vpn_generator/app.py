@@ -44,7 +44,7 @@ def index():
         data['fg_is_dhcp'] = 'fg_is_dhcp' in data
         data['pa_is_dhcp'] = 'pa_is_dhcp' in data
 
-        # 4. Lógica de Peer IP
+        # 4. Lógica de Peer IP (Crucial para eliminar 'hostvars')
         if not data['fg_is_dhcp']:
             data['pa_peer_ip'] = data['fg_wan_ip'].split('/')[0]
         else:
@@ -55,14 +55,13 @@ def index():
         else:
             data['fg_remote_gw'] = "10.100.100.115"
 
-        # --- CORRECCIÓN CRÍTICA: DEFINIR VARIABLES DE TÚNEL ---
-        # Estas variables faltaban y causaban el error 'undefined' en site.j2
+        # 5. Definir IPs del Túnel (Fijo para evitar errores de cálculo)
         data['fg_tunnel_ip'] = "169.255.1.1 255.255.255.255"
         data['fg_remote_tunnel_ip'] = "169.255.1.2 255.255.255.255"
         data['pa_tunnel_ip'] = "169.255.1.2/32"
-        # -----------------------------------------------------
+        data['pa_nexthop_ip'] = "169.255.1.1"
 
-        # 5. Generar ZIP
+        # 6. Generar ZIP
         memory_file = io.BytesIO()
         with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
             
@@ -74,7 +73,6 @@ def index():
             }
 
             for template_file, dest_path in templates_map.items():
-                # Aquí es donde fallaba antes: ahora 'data' ya tiene fg_tunnel_ip
                 content = render_template(f'ansible_templates/{template_file}', **data)
                 zf.writestr(dest_path, content)
 
@@ -89,11 +87,7 @@ timeout = 30
             zf.writestr('ansible.cfg', ansible_cfg)
 
         memory_file.seek(0)
-        return send_file(
-            memory_file,
-            download_name="ansible_vpn_config.zip",
-            as_attachment=True
-        )
+        return send_file(memory_file, download_name="ansible_vpn_config.zip", as_attachment=True)
 
     return render_template('index.html', profiles=VPN_PROFILES)
 
