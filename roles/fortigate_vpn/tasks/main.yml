@@ -29,12 +29,7 @@
   debug:
     msg: "La clave PSK es: {{ vpn_psk }}"
 
-- name: 1.a LIMPIEZA - Borrar Phase 1 existente (si hay error previo)
-  fortios_vpn_ipsec_phase1_interface:
-    vdom: "root"
-    state: "absent"
-    vpn_ipsec_phase1_interface:
-      name: "S2S-FG-PA"
+# Tarea de limpieza eliminada para evitar conflictos de dependencias
 
 - name: 1.b CREAR - Configurar Phase 1 (Low Encryption Fix)
   fortios_vpn_ipsec_phase1_interface:
@@ -42,13 +37,11 @@
     state: "present"
     vpn_ipsec_phase1_interface:
       name: "S2S-FG-PA"
-      interface: "port2"           # Mantenemos port2 que sabemos que funciona
+      interface: "port2"
       ike_version: "2"
       peertype: "any"
       net_device: "disable"
-      # --- CAMBIO CRÍTICO: Usar lo que soporta tu VM ---
       proposal: "des-sha256"
-      # -------------------------------------------------
       dhgrp: "14"
       remote_gw: "192.168.2.99"
       psksecret: "{{ vpn_psk }}"
@@ -61,40 +54,42 @@
     vpn_ipsec_phase2_interface:
       name: "S2S-FG-PA-P2"
       phase1name: "S2S-FG-PA"
-      # --- CAMBIO CRÍTICO: Debe coincidir con Phase 1 ---
       proposal: "des-sha256"
-      # --------------------------------------------------
       dhgrp: "14"
       keylifeseconds: 3600
       src_subnet: "0.0.0.0 0.0.0.0"
       dst_subnet: "0.0.0.0 0.0.0.0"
       auto_negotiate: "enable"
 
-- name: 3. Configurar Interfaz de Túnel (VTI)
+- name: 3. Configurar Interfaz de Tunel (VTI)
   fortios_system_interface:
     vdom: "root"
     state: "present"
     system_interface:
       name: "S2S-FG-PA"
       vdom: "root"
-      ip: "169.255.1.1 255.255.255.252"
+      # Mascara /32 es obligatoria para interfaces tunel
+      ip: "169.255.1.1 255.255.255.255"
       allowaccess: "ping"
       type: "tunnel"
-      interface: "port1"
+      interface: "port2"
+      remote_ip: "169.255.1.2 255.255.255.255"
 
-- name: 4. Configurar Ruta Estática hacia Site B
+- name: 4. Configurar Ruta Estatica hacia Site B
   fortios_router_static:
     vdom: "root"
     state: "present"
     router_static:
+      seq_num: "10"                # ID OBLIGATORIO AGREGADO
       dst: "10.200.200.0 255.255.252.0"
       device: "S2S-FG-PA"
 
-- name: 5. Configurar Política de Firewall (Salida)
+- name: 5. Configurar Politica de Firewall (Salida)
   fortios_firewall_policy:
     vdom: "root"
     state: "present"
     firewall_policy:
+      policyid: "100"              # ID OBLIGATORIO AGREGADO
       name: "LAN-to-VPN"
       srcintf:
         - name: "port2"
@@ -112,11 +107,12 @@
       nat: "disable"
       logtraffic: "all"
 
-- name: 6. Configurar Política de Firewall (Entrada)
+- name: 6. Configurar Politica de Firewall (Entrada)
   fortios_firewall_policy:
     vdom: "root"
     state: "present"
     firewall_policy:
+      policyid: "101"              # ID OBLIGATORIO AGREGADO
       name: "VPN-to-LAN"
       srcintf:
         - name: "S2S-FG-PA"
