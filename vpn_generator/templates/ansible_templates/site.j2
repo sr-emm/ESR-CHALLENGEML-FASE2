@@ -1,0 +1,48 @@
+---
+- name: Despliegue Automatizado VPN (Generado por Web UI)
+  hosts: fortigates
+  connection: httpapi
+  gather_facts: no
+  collections:
+    - fortinet.fortios
+  
+  vars_files:
+    - group_vars/all.yml
+
+  tasks:
+    - name: Configurar VPN Phase 1 en FortiGate
+      fortios_vpn_ipsec_phase1_interface:
+        vdom: "root"
+        state: "present"
+        vpn_ipsec_phase1_interface:
+          name: "{{ vpn_name }}"
+          interface: "{{ fg_wan_intf }}"
+          ike_version: "2"
+          peertype: "any"
+          net_device: "disable"
+          proposal: "{{ phase1_proposal }}"
+          dhgrp: "{{ dh_group }}"
+          remote_gw: "{{ hostvars['palo_site_b']['ansible_host'] }}" 
+          psksecret: "{{ vpn_psk }}"
+          nattraversal: "disable"
+
+    - name: Configurar VPN Phase 2
+      fortios_vpn_ipsec_phase2_interface:
+        vdom: "root"
+        state: "present"
+        vpn_ipsec_phase2_interface:
+          name: "{{ vpn_name }}-P2"
+          phase1name: "{{ vpn_name }}"
+          proposal: "{{ phase2_proposal }}"
+          dhgrp: "{{ dh_group }}"
+          keylifeseconds: 3600
+          src_subnet: "0.0.0.0 0.0.0.0"
+          dst_subnet: "0.0.0.0 0.0.0.0"
+
+- name: Despliegue Palo Alto (Stub)
+  hosts: paloaltos
+  connection: local
+  gather_facts: no
+  tasks:
+    - debug:
+        msg: "Configuracion lista para Palo Alto usando perfil {{ pa_enc_algo }}/{{ pa_auth_algo }}"

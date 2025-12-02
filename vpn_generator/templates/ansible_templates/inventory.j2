@@ -1,0 +1,21 @@
+all:
+  children:
+    fortigates:
+      hosts:
+        forti_site_a:
+          ansible_host: {{ fg_mgmt_ip }}
+          ansible_user: admin
+          ansible_password: "password123" # Cambiar en produccion
+          ansible_connection: httpapi
+          ansible_network_os: fortinet.fortios.fortios
+          ansible_httpapi_use_ssl: yes
+          ansible_httpapi_validate_certs: no
+          ansible_httpapi_port: 443
+
+    paloaltos:
+      hosts:
+        palo_site_b:
+          ansible_host: {{ pa_mgmt_ip }}
+          ansible_user: admin
+          ansible_password: "password123"
+          ansible_connection: local
