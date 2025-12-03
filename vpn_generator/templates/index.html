@@ -192,3 +192,102 @@
                 <label class="form-label text-white">Nombre Túnel</label>
                 <input type="text" class="form-control font-monospace" name="vpn_name" value="S2S-OVERLAY" required>
             </div>
+            
+            <div class="col-md-4">
+                <label class="form-label text-white">PSK (Segura)</label>
+                <input type="text" class="form-control font-monospace" name="vpn_psk" 
+                       value="Fortinet#VPN_2025" 
+                       required 
+                       pattern="[a-zA-Z0-9@!_.\-+#]+" 
+                       title="Permitidos: Letras, números y @ ! - _ . + #"
+                       oninput="validatePSK(this)">
+                <div class="form-text text-secondary small">Símbolos seguros: @ ! - _ . + #</div>
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label text-white">Diffie-Hellman</label>
+                <select class="form-select border-warning" name="dh_group_select">
+                    <option value="14" selected>Group 14 (2048-bit)</option>
+                    <option value="19">Group 19 (256-bit ECP)</option>
+                    <option value="21">Group 21 (521-bit ECP)</option>
+                    <option value="5">Group 5 (Legacy)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="row mt-3">
+            <div class="col-12">
+                <label class="form-label text-white">Perfil de Encriptación</label>
+                <select class="form-select border-warning" name="vpn_profile" onchange="updateDesc()">
+                    {% for key, profile in profiles.items() %}
+                    <option value="{{ key }}" data-desc="{{ profile.desc }}">{{ profile.name }}</option>
+                    {% endfor %}
+                </select>
+                <div id="profileDescription" class="form-text text-info mt-1">
+                    </div>
+            </div>
+        </div>
+
+        <div class="d-grid gap-2 mt-5 mb-5">
+            <button type="submit" class="btn btn-success btn-lg py-3 fw-bold">📥 Generar Configuración (ZIP)</button>
+        </div>
+    </form>
+</div>
+
+<script>
+    // Validación PSK (Permite #, bloquea comillas)
+    function validatePSK(input) {
+        if (input.value.includes('"') || input.value.includes("'")) {
+            input.value = input.value.replace(/["']/g, '');
+            input.classList.add('is-invalid');
+        }
+        var regex = /[^a-zA-Z0-9@!_.\-+#]/g;
+        if (regex.test(input.value)) {
+            input.value = input.value.replace(regex, '');
+            input.classList.add('is-invalid');
+        } else {
+            input.classList.remove('is-invalid');
+        }
+    }
+
+    // Validación Cruzada de Puertos
+    function updatePorts(prefix) {
+        let selects = document.querySelectorAll('.' + prefix + '-selector');
+        let selectedValues = [];
+        selects.forEach(sel => { selectedValues.push(sel.value); });
+        selects.forEach((sel) => {
+            let currentVal = sel.value;
+            for (let i = 0; i < sel.options.length; i++) {
+                let opt = sel.options[i];
+                if (selectedValues.includes(opt.value) && opt.value !== currentVal) {
+                    opt.disabled = true;
+                    let shortName = opt.value.replace("ethernet", "eth");
+                    if (prefix === 'fg') shortName = opt.value;
+                    opt.innerText = shortName + " (Ocupado)"; 
+                } else {
+                    opt.disabled = false;
+                    let shortName = opt.value.replace("ethernet", "eth");
+                    if (prefix === 'fg') shortName = opt.value;
+                    opt.innerText = shortName;
+                }
+            }
+        });
+    }
+
+    // Actualizar descripción del perfil
+    function updateDesc() {
+        var select = document.querySelector('select[name="vpn_profile"]');
+        var desc = select.options[select.selectedIndex].getAttribute('data-desc');
+        document.getElementById('profileDescription').innerText = "ℹ️ " + desc;
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        updatePorts('fg');
+        updatePorts('pa');
+        updateDesc();
+    });
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
