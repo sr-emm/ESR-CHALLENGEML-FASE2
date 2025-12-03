@@ -171,7 +171,7 @@
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
         if_name: "{{ pa_lan1_intf }}"
         mode: "layer3"
-        ip: ["{{ pa_lan1_ip }}"]
+        ip: ["{{ pa_lan1_cidr }}"]
         vr_name: "default"
         zone_name: "trust"
 
@@ -180,7 +180,7 @@
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
         if_name: "{{ pa_lan2_intf }}"
         mode: "layer3"
-        ip: ["{{ pa_lan2_ip }}"]
+        ip: ["{{ pa_lan2_cidr }}"]
         vr_name: "default"
         zone_name: "trust"
 
@@ -203,9 +203,8 @@
         hash: ["{{ pa_auth_algo }}"]
         lifetime_seconds: 43200
 
-    # --- CORRECCIÓN AQUÍ: NOMBRE DEL MÓDULO CORREGIDO ---
     - name: Perfil IPsec (Phase 2)
-      paloaltonetworks.panos.panos_ipsec_profile:  # <-- ERA panos_ipsec_crypto_profile
+      paloaltonetworks.panos.panos_ipsec_profile:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
         name: "{{ vpn_name }}-IPSEC"
         dh_group: "group{{ dh_group }}"
@@ -213,17 +212,18 @@
         esp_authentication: ["{{ pa_auth_algo }}"]
         lifetime_seconds: 3600
 
-    # --- 3. VPN ---
+    # --- 3. VPN (CORREGIDO: Parámetros IKE Gateway) ---
     - name: Configurar IKE Gateway
       paloaltonetworks.panos.panos_ike_gateway:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
         name: "{{ vpn_name }}-GW"
         version: "ikev2"
         interface: "{{ pa_wan_intf }}"
-        peer_ip_value: "{{ pa_peer_ip }}"
+        peer_ip: "{{ pa_peer_ip }}"          # CORREGIDO: peer_ip en vez de peer_ip_value
         pre_shared_key: "{{ vpn_psk }}"
-        crypto_profile: "{{ vpn_name }}-IKE"
-        liveness_check: 5
+        ikev2_crypto_profile: "{{ vpn_name }}-IKE" # CORREGIDO: Param específico para IKEv2
+        enable_liveness_check: true          # CORREGIDO: Sintaxis booleana
+        liveness_check_interval: 5           # CORREGIDO: Parámetro separado
 
     - name: Configurar IPSec Tunnel
       paloaltonetworks.panos.panos_ipsec_tunnel:
@@ -234,13 +234,15 @@
         ipsec_profile: "{{ vpn_name }}-IPSEC"
         enable_tunneling: true
 
-    - name: Agregar Proxy ID Wildcard
-      paloaltonetworks.panos.panos_ipsec_tunnel_proxy_id:
+    - name: Agregar Proxy ID Wildcard (Compatibilidad Universal)
+      paloaltonetworks.panos.panos_config_element:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
-        tunnel_name: "{{ vpn_name }}"
-        name: "Wildcard-S2S"
-        local: "0.0.0.0/0"
-        remote: "0.0.0.0/0"
+        xpath: "/config/devices/entry[@name='localhost.localdomain']/network/tunnel/ipsec/entry[@name='{{ vpn_name }}']/auto-key/proxy-id"
+        element: |
+          <entry name="Wildcard-S2S">
+            <local>0.0.0.0/0</local>
+            <remote>0.0.0.0/0</remote>
+          </entry>
 
     # --- 4. Routing ---
     - name: Ruta Estática hacia Site A
@@ -253,7 +255,32 @@
         interface: "tunnel.1"
         virtual_router: "default"
 
-    # --- 5. Commit ---
+    # --- 5. Políticas de Seguridad (Faltantes Agregadas) ---
+    - name: Política de Seguridad (Salida VPN)
+      paloaltonetworks.panos.panos_security_rule:
+        provider: "{{ '{{' }} pa_provider {{ '}}' }}"
+        rule_name: "Permitir_VPN_Salida"
+        source_zone: ["trust"]
+        destination_zone: ["VPN_Zone"]
+        source_ip: ["any"]
+        destination_ip: ["any"]
+        application: ["any"]
+        service: ["application-default"]
+        action: "allow"
+
+    - name: Política de Seguridad (Entrada VPN)
+      paloaltonetworks.panos.panos_security_rule:
+        provider: "{{ '{{' }} pa_provider {{ '}}' }}"
+        rule_name: "Permitir_VPN_Entrada"
+        source_zone: ["VPN_Zone"]
+        destination_zone: ["trust"]
+        source_ip: ["any"]
+        destination_ip: ["any"]
+        application: ["any"]
+        service: ["application-default"]
+        action: "allow"
+
+    # --- 6. Commit ---
     - name: COMMIT FINAL (Palo Alto)
       paloaltonetworks.panos.panos_commit:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
