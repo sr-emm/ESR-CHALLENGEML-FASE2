@@ -2,20 +2,35 @@
 <html lang="es" data-bs-theme="dark">
 <head>
     <meta charset="UTF-8">
-    <title>Generador VPN: Overlay Mode</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Generador VPN: FortiGate <-> Palo Alto</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { background-color: #0d1117; }
         .card { border: 1px solid #30363d; background-color: #161b22; }
         .card-header { font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
+        
+        /* Branding */
         .border-forti { border-color: #dc3545 !important; }
         .text-forti { color: #dc3545 !important; }
+        .bg-forti { background-color: #dc3545 !important; }
+
         .border-palo { border-color: #0d6efd !important; }
         .text-palo { color: #0d6efd !important; }
+        .bg-palo { background-color: #0d6efd !important; }
+
+        /* Inputs: Fondo oscuro pero fuente legible por defecto */
         .form-control, .form-select { 
             background-color: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
-            font-family: 'Courier New', Courier, monospace;
         }
+        .form-control:focus, .form-select:focus { 
+            background-color: #0d1117; color: #fff; border-color: #58a6ff; 
+            box-shadow: 0 0 0 0.25rem rgba(88, 166, 255, 0.25);
+        }
+        
+        /* Estilos de validación */
+        input:invalid { border-color: #dc3545 !important; }
+        input:valid { border-color: #198754 !important; }
     </style>
 </head>
 <body>
@@ -23,19 +38,19 @@
 <div class="container py-5">
     <div class="text-center mb-4">
         <h1 class="display-6 fw-bold text-light">🚀 Generador VPN <span class="badge bg-secondary">Overlay Only</span></h1>
-        <p class="text-muted">Configura VPN, Rutas y Políticas sin tocar las interfaces físicas.</p>
+        <p class="text-muted">Configura VPN, Rutas y Políticas sin alterar la configuración física.</p>
     </div>
 
     <form method="POST" action="/">
         <div class="row g-4">
             <div class="col-md-6">
                 <div class="card h-100 shadow-sm border-forti">
-                    <div class="card-header bg-danger text-white bg-opacity-25">🔥 Sitio A: Fortinet</div>
+                    <div class="card-header bg-forti text-white bg-opacity-25">🔥 Sitio A: Fortinet</div>
                     <div class="card-body">
                         <div class="row g-2 mb-3">
                             <div class="col-12">
                                 <label class="form-label text-muted small">IP Gestión</label>
-                                <input type="text" class="form-control form-control-sm" name="fg_mgmt_ip" placeholder="10.100.100.193" required>
+                                <input type="text" class="form-control form-control-sm font-monospace" name="fg_mgmt_ip" placeholder="10.100.100.193" required>
                             </div>
                             <div class="col-6">
                                 <input type="text" class="form-control form-control-sm" name="fg_username" value="admin" placeholder="User">
@@ -46,45 +61,44 @@
                         </div>
 
                         <hr class="border-secondary">
-                        <h6 class="text-forti">Definición de Interfaces (Existentes)</h6>
+                        <h6 class="text-forti">Interfaces (Existentes)</h6>
                         
                         <div class="mb-2">
                             <label class="form-label small">Interfaz WAN</label>
                             <div class="input-group input-group-sm">
-                                <select class="form-select" name="fg_wan_interface">
+                                <select class="form-select fg-selector" name="fg_wan_interface" onchange="updatePorts('fg')">
                                     <option value="port1" selected>port1</option>
                                     {% for i in range(2, 17) %}
                                     <option value="port{{ i }}">port{{ i }}</option>
                                     {% endfor %}
                                 </select>
-                                <input type="text" class="form-control" name="fg_wan_ip" placeholder="IP Pública (Para el Peer)" required>
+                                <input type="text" class="form-control font-monospace" name="fg_wan_ip" placeholder="IP Pública Peer" required>
                             </div>
-                            <div class="form-text text-secondary" style="font-size: 0.7rem">Nota: La IP es solo para decirle al otro extremo dónde conectar.</div>
                         </div>
 
                         <div class="mb-2">
-                            <label class="form-label small">LAN 1 (Subnet para Ruteo)</label>
+                            <label class="form-label small">LAN 1 (Ruteo)</label>
                             <div class="input-group input-group-sm">
-                                <select class="form-select" name="fg_lan1_interface" style="max-width: 100px;">
+                                <select class="form-select fg-selector" name="fg_lan1_interface" style="max-width: 100px;" onchange="updatePorts('fg')">
                                     <option value="port2" selected>port2</option>
                                     {% for i in range(1, 17) %}
                                     <option value="port{{ i }}">port{{ i }}</option>
                                     {% endfor %}
                                 </select>
-                                <input type="text" class="form-control" name="fg_lan1_subnet" value="10.100.101.0/24" required>
+                                <input type="text" class="form-control font-monospace" name="fg_lan1_subnet" value="10.100.101.0/24" required>
                             </div>
                         </div>
 
                         <div class="mb-2">
-                            <label class="form-label small">LAN 2 (Subnet para Ruteo)</label>
+                            <label class="form-label small">LAN 2 (Ruteo)</label>
                             <div class="input-group input-group-sm">
-                                <select class="form-select" name="fg_lan2_interface" style="max-width: 100px;">
+                                <select class="form-select fg-selector" name="fg_lan2_interface" style="max-width: 100px;" onchange="updatePorts('fg')">
                                     <option value="port3" selected>port3</option>
                                     {% for i in range(1, 17) %}
                                     <option value="port{{ i }}">port{{ i }}</option>
                                     {% endfor %}
                                 </select>
-                                <input type="text" class="form-control" name="fg_lan2_subnet" value="10.100.102.0/24" required>
+                                <input type="text" class="form-control font-monospace" name="fg_lan2_subnet" value="10.100.102.0/24" required>
                             </div>
                         </div>
                     </div>
@@ -98,7 +112,7 @@
                         <div class="row g-2 mb-3">
                             <div class="col-12">
                                 <label class="form-label text-muted small">IP Gestión</label>
-                                <input type="text" class="form-control form-control-sm" name="pa_mgmt_ip" placeholder="10.100.100.115" required>
+                                <input type="text" class="form-control form-control-sm font-monospace" name="pa_mgmt_ip" placeholder="10.100.100.115" required>
                             </div>
                             <div class="col-6">
                                 <input type="text" class="form-control form-control-sm" name="pa_username" value="admin">
@@ -109,44 +123,44 @@
                         </div>
 
                         <hr class="border-secondary">
-                        <h6 class="text-palo">Definición de Interfaces (Existentes)</h6>
+                        <h6 class="text-palo">Interfaces (Existentes)</h6>
 
                         <div class="mb-2">
                             <label class="form-label small">Interfaz WAN</label>
                             <div class="input-group input-group-sm">
-                                <select class="form-select" name="pa_wan_interface">
+                                <select class="form-select pa-selector" name="pa_wan_interface" onchange="updatePorts('pa')">
                                     <option value="ethernet1/1" selected>eth1/1</option>
                                     {% for i in range(2, 9) %}
                                     <option value="ethernet1/{{ i }}">eth1/{{ i }}</option>
                                     {% endfor %}
                                 </select>
-                                <input type="text" class="form-control" name="pa_wan_ip" placeholder="IP Pública (Para el Peer)" required>
+                                <input type="text" class="form-control font-monospace" name="pa_wan_ip" placeholder="IP Pública Peer" required>
                             </div>
                         </div>
 
                         <div class="mb-2">
-                            <label class="form-label small">LAN 1 (Subnet para Ruteo)</label>
+                            <label class="form-label small">LAN 1 (Ruteo)</label>
                             <div class="input-group input-group-sm">
-                                <select class="form-select" name="pa_lan1_interface" style="max-width: 100px;">
+                                <select class="form-select pa-selector" name="pa_lan1_interface" style="max-width: 100px;" onchange="updatePorts('pa')">
                                     <option value="ethernet1/2" selected>eth1/2</option>
                                     {% for i in range(1, 9) %}
                                     <option value="ethernet1/{{ i }}">eth1/{{ i }}</option>
                                     {% endfor %}
                                 </select>
-                                <input type="text" class="form-control" name="pa_lan1_subnet" value="10.200.201.0/24" required>
+                                <input type="text" class="form-control font-monospace" name="pa_lan1_subnet" value="10.200.201.0/24" required>
                             </div>
                         </div>
 
                         <div class="mb-2">
-                            <label class="form-label small">LAN 2 (Subnet para Ruteo)</label>
+                            <label class="form-label small">LAN 2 (Ruteo)</label>
                             <div class="input-group input-group-sm">
-                                <select class="form-select" name="pa_lan2_interface" style="max-width: 100px;">
+                                <select class="form-select pa-selector" name="pa_lan2_interface" style="max-width: 100px;" onchange="updatePorts('pa')">
                                     <option value="ethernet1/3" selected>eth1/3</option>
                                     {% for i in range(1, 9) %}
                                     <option value="ethernet1/{{ i }}">eth1/{{ i }}</option>
                                     {% endfor %}
                                 </select>
-                                <input type="text" class="form-control" name="pa_lan2_subnet" value="10.200.202.0/24" required>
+                                <input type="text" class="form-control font-monospace" name="pa_lan2_subnet" value="10.200.202.0/24" required>
                             </div>
                         </div>
                     </div>
@@ -176,27 +190,5 @@
         <div class="row mt-4">
             <div class="col-md-4">
                 <label class="form-label text-white">Nombre Túnel</label>
-                <input type="text" class="form-control" name="vpn_name" value="S2S-OVERLAY" required>
+                <input type="text" class="form-control font-monospace" name="vpn_name" value="S2S-OVERLAY" required>
             </div>
-            <div class="col-md-4">
-                <label class="form-label text-white">PSK</label>
-                <input type="text" class="form-control" name="vpn_psk" value="FortinetVPN2025" required pattern="[a-zA-Z0-9@!_.\-+]+">
-            </div>
-            <div class="col-md-4">
-                <label class="form-label text-white">Perfil</label>
-                <select class="form-select" name="vpn_profile">
-                    {% for key, profile in profiles.items() %}
-                    <option value="{{ key }}">{{ profile.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-        </div>
-
-        <div class="d-grid gap-2 mt-5 mb-5">
-            <button type="submit" class="btn btn-success btn-lg py-3 fw-bold">📥 Generar Configuración</button>
-        </div>
-    </form>
-</div>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
