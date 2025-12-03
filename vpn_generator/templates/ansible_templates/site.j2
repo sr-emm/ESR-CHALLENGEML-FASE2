@@ -85,16 +85,28 @@
           interface: "{{ fg_wan_interface }}"
           remote_ip: "{{ fg_remote_tunnel_ip }}"
 
-    # --- 4. Routing y Políticas ---
-    - name: Ruta Estática hacia Site B
+# --- 4. Routing y Políticas (FortiGate) ---
+    
+    - name: Ruta Estática hacia Site B (LAN 1)
       fortios_router_static:
         vdom: "root"
         state: "present"
         router_static:
           seq_num: "10"
-          # CORRECCIÓN: Usamos variable formateada (IP MASK)
-          dst: "{{ pa_lan_subnet_fmt }}"
+          dst: "{{ pa_lan1_fmt }}"  # <--- Usamos la variable formateada de app.py
           device: "{{ vpn_name }}"
+
+    - name: Ruta Estática hacia Site B (LAN 2)
+      fortios_router_static:
+        vdom: "root"
+        state: "present"
+        router_static:
+          seq_num: "11"             # <--- ID diferente
+          dst: "{{ pa_lan2_fmt }}"  # <--- Usamos la variable formateada de app.py
+          device: "{{ vpn_name }}"
+
+    - name: Politica Firewall (Salida)
+
 
     - name: Politica Firewall (Salida)
       fortios_firewall_policy:

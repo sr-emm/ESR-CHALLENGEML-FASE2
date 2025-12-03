@@ -5,33 +5,30 @@ from flask import Flask, render_template, request, send_file
 
 app = Flask(__name__)
 
-# --- PERFILES DE ENCRIPTACIÓN (CORREGIDOS) ---
+# --- PERFILES DE ENCRIPTACIÓN ---
 VPN_PROFILES = {
     "lab_legacy": {
         "name": "🧪 Lab / Legacy (DES-SHA256)",
-        "phase1_prop": "des-sha256",   # Fortinet
-        "phase2_prop": "des-sha256",   # Fortinet
-        "palo_enc": "des",             # <--- CORREGIDO (Era des-cbc)
+        "phase1_prop": "des-sha256",
+        "phase2_prop": "des-sha256",
+        "palo_enc": "des",             # Valor corregido para Palo Alto
         "palo_auth": "sha256"
     },
     "production_std": {
         "name": "🏭 Producción (AES128-SHA256)",
         "phase1_prop": "aes128-sha256",
         "phase2_prop": "aes128-sha256",
-        "palo_enc": "aes-128-cbc",     # Este sí lleva -cbc en Ansible
+        "palo_enc": "aes-128-cbc",
         "palo_auth": "sha256"
     },
     "high_security": {
         "name": "🛡️ Alta Seguridad (AES256-SHA256)",
         "phase1_prop": "aes256-sha256",
         "phase2_prop": "aes256-sha256",
-        "palo_enc": "aes-256-cbc",     # Este también
+        "palo_enc": "aes-256-cbc",
         "palo_auth": "sha256"
     }
 }
-
-# ... (El resto del archivo app.py con la función 'to_forti_format' y las rutas sigue IGUAL) ...
-# Solo asegúrate de mantener la función to_forti_format que agregamos antes.
 
 def to_forti_format(cidr_str):
     try:
@@ -70,10 +67,16 @@ def index():
         data['pa_tunnel_ip'] = "169.255.1.2/32"
         data['pa_nexthop_ip'] = "169.255.1.1"
         
-        # 5. Formato Fortinet
+        # 5. Formateo de IPs para Fortinet (Conversión a Decimal)
         data['fg_lan1_fmt'] = to_forti_format(data['fg_lan1_ip'])
         data['fg_lan2_fmt'] = to_forti_format(data['fg_lan2_ip'])
-        data['pa_lan_subnet_fmt'] = to_forti_format(data['pa_lan_subnet'])
+        
+        # --- CORRECCIÓN AQUÍ: ---
+        # Ya no usamos 'pa_lan_subnet'. Ahora formateamos las 2 LANs de Palo Alto 
+        # para crear rutas estáticas individuales en el FortiGate.
+        data['pa_lan1_fmt'] = to_forti_format(data['pa_lan1_ip'])
+        data['pa_lan2_fmt'] = to_forti_format(data['pa_lan2_ip'])
+        # ------------------------
 
         # 6. Generar ZIP
         memory_file = io.BytesIO()
