@@ -22,7 +22,6 @@
           name: "{{ fg_lan1_interface }}"
           vdom: "root"
           mode: "static"
-          # CORRECCIÓN: Usamos la variable pre-formateada por Python (IP MASK)
           ip: "{{ fg_lan1_fmt }}"
           allowaccess: "ping,https,ssh"
           alias: "LAN_1_Generada"
@@ -35,13 +34,11 @@
           name: "{{ fg_lan2_interface }}"
           vdom: "root"
           mode: "static"
-          # CORRECCIÓN: Usamos variable formateada
           ip: "{{ fg_lan2_fmt }}"
           allowaccess: "ping"
           alias: "LAN_2_Generada"
 
-    # ... (TAREAS DE VPN PHASE 1 y PHASE 2 SE MANTIENEN IGUAL) ...
-    # (Si quieres, copia el bloque completo de VPN aquí para asegurar que no se pierda nada)
+    # --- 2. VPN (IPSec) ---
     - name: Configurar VPN Phase 1
       fortios_vpn_ipsec_phase1_interface:
         vdom: "root"
@@ -72,6 +69,7 @@
           dst_subnet: "0.0.0.0 0.0.0.0"
           auto_negotiate: "enable"
 
+    # --- 3. Interfaz de Túnel ---
     - name: Configurar Interfaz Túnel (VTI)
       fortios_system_interface:
         vdom: "root"
@@ -85,15 +83,14 @@
           interface: "{{ fg_wan_interface }}"
           remote_ip: "{{ fg_remote_tunnel_ip }}"
 
-# --- 4. Routing y Políticas (FortiGate) ---
-    
+    # --- 4. Routing ---
     - name: Ruta Estática hacia Site B (LAN 1)
       fortios_router_static:
         vdom: "root"
         state: "present"
         router_static:
           seq_num: "10"
-          dst: "{{ pa_lan1_fmt }}"  # <--- Usamos la variable formateada de app.py
+          dst: "{{ pa_lan1_fmt }}"
           device: "{{ vpn_name }}"
 
     - name: Ruta Estática hacia Site B (LAN 2)
@@ -101,13 +98,11 @@
         vdom: "root"
         state: "present"
         router_static:
-          seq_num: "11"             # <--- ID diferente
-          dst: "{{ pa_lan2_fmt }}"  # <--- Usamos la variable formateada de app.py
+          seq_num: "11"
+          dst: "{{ pa_lan2_fmt }}"
           device: "{{ vpn_name }}"
 
-    - name: Politica Firewall (Salida)
-
-
+    # --- 5. Políticas de Firewall ---
     - name: Politica Firewall (Salida)
       fortios_firewall_policy:
         vdom: "root"
@@ -116,8 +111,8 @@
           policyid: "100"
           name: "LAN-to-VPN"
           srcintf:
-            - name: "{{ fg_lan1_interface }}" # <--- CORREGIDO
-            - name: "{{ fg_lan2_interface }}" # <--- CORREGIDO
+            - name: "{{ fg_lan1_interface }}"
+            - name: "{{ fg_lan2_interface }}"
           dstintf:
             - name: "{{ vpn_name }}"
           srcaddr:
@@ -141,8 +136,8 @@
           srcintf:
             - name: "{{ vpn_name }}"
           dstintf:
-            - name: "{{ fg_lan1_interface }}" # <--- CORREGIDO
-            - name: "{{ fg_lan2_interface }}" # <--- CORREGIDO
+            - name: "{{ fg_lan1_interface }}"
+            - name: "{{ fg_lan2_interface }}"
           srcaddr:
             - name: "all"
           dstaddr:
@@ -170,10 +165,10 @@
 
   tasks:
     # --- 1. Interfaces ---
-    - name: Configurar WAN ({{ pa_wan_interface }})
+    - name: Configurar WAN ({{ pa_wan_intf }})
       paloaltonetworks.panos.panos_interface:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
-        if_name: "{{ pa_wan_interface }}"     # <--- CORREGIDO
+        if_name: "{{ pa_wan_intf }}"
         mode: "layer3"
         enable_dhcp: "{{ 'true' if pa_is_dhcp else 'false' }}"
         create_default_route: "{{ 'true' if pa_is_dhcp else 'false' }}"
@@ -181,21 +176,21 @@
         vr_name: "default"
         zone_name: "untrust"
 
-    - name: Configurar LAN 1 ({{ pa_lan1_interface }})
+    - name: Configurar LAN 1 ({{ pa_lan1_intf }})
       paloaltonetworks.panos.panos_interface:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
-        if_name: "{{ pa_lan1_interface }}"    # <--- CORREGIDO
+        if_name: "{{ pa_lan1_intf }}"
         mode: "layer3"
-        ip: ["{{ pa_lan1_ip }}"]              # <--- CORREGIDO
+        ip: ["{{ pa_lan1_cidr }}"]
         vr_name: "default"
         zone_name: "trust"
 
-    - name: Configurar LAN 2 ({{ pa_lan2_interface }})
+    - name: Configurar LAN 2 ({{ pa_lan2_intf }})
       paloaltonetworks.panos.panos_interface:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
-        if_name: "{{ pa_lan2_interface }}"    # <--- CORREGIDO
+        if_name: "{{ pa_lan2_intf }}"
         mode: "layer3"
-        ip: ["{{ pa_lan2_ip }}"]              # <--- CORREGIDO
+        ip: ["{{ pa_lan2_cidr }}"]
         vr_name: "default"
         zone_name: "trust"
 
@@ -214,8 +209,8 @@
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
         name: "{{ vpn_name }}-IKE"
         dh_group: ["group{{ dh_group }}"]
-        encryption: ["{{ palo_enc }}"]        # <--- CORREGIDO (Variable de Perfil Python)
-        hash: ["{{ palo_auth }}"]             # <--- CORREGIDO
+        encryption: ["{{ pa_enc_algo }}"]
+        hash: ["{{ pa_auth_algo }}"]
         lifetime_seconds: 43200
 
     - name: Perfil IPsec (Phase 2)
@@ -223,8 +218,8 @@
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
         name: "{{ vpn_name }}-IPSEC"
         dh_group: "group{{ dh_group }}"
-        esp_encryption: ["{{ palo_enc }}"]    # <--- CORREGIDO
-        esp_authentication: ["{{ palo_auth }}"] # <--- CORREGIDO
+        esp_encryption: ["{{ pa_enc_algo }}"]
+        esp_authentication: ["{{ pa_auth_algo }}"]
         lifetime_seconds: 3600
 
     # --- 3. VPN ---
@@ -233,7 +228,7 @@
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
         name: "{{ vpn_name }}-GW"
         version: "ikev2"
-        interface: "{{ pa_wan_interface }}"   # <--- CORREGIDO
+        interface: "{{ pa_wan_intf }}"
         peer_ip: "{{ pa_peer_ip }}"
         pre_shared_key: "{{ vpn_psk }}"
         ikev2_crypto_profile: "{{ vpn_name }}-IKE"
@@ -260,11 +255,21 @@
           </entry>
 
     # --- 4. Routing ---
-    - name: Ruta Estática hacia Site A
+    - name: Ruta Estática hacia LAN 1 FG
       paloaltonetworks.panos.panos_static_route:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
-        name: "Ruta-a-SiteA"
-        destination: "{{ fg_lan1_ip }}"       # <--- CORREGIDO
+        name: "Ruta-a-SiteA-LAN1"
+        destination: "{{ fg_lan1_cidr }}" 
+        nexthop_type: "ip-address"
+        nexthop: "{{ fg_tunnel_ip.split(' ')[0] }}"
+        interface: "tunnel.1"
+        virtual_router: "default"
+
+    - name: Ruta Estática hacia LAN 2 FG
+      paloaltonetworks.panos.panos_static_route:
+        provider: "{{ '{{' }} pa_provider {{ '}}' }}"
+        name: "Ruta-a-SiteA-LAN2"
+        destination: "{{ fg_lan2_cidr }}" 
         nexthop_type: "ip-address"
         nexthop: "{{ fg_tunnel_ip.split(' ')[0] }}"
         interface: "tunnel.1"
