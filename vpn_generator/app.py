@@ -5,109 +5,64 @@ from flask import Flask, render_template, request, send_file
 
 app = Flask(__name__)
 
-# --- PERFILES DE ENCRIPTACIÓN ---
+# Perfiles (Mantenemos LENC como default para tu lab)
 VPN_PROFILES = {
-    "lab_legacy": {
-        "name": "🧪 Lab / Legacy (DES-SHA256)",
-        "phase1_prop": "des-sha256",
-        "phase2_prop": "des-sha256",
-        "palo_enc": "des",             # Valor corregido para Palo Alto
-        "palo_auth": "sha256"
-    },
-    "production_std": {
-        "name": "🏭 Producción (AES128-SHA256)",
-        "phase1_prop": "aes128-sha256",
-        "phase2_prop": "aes128-sha256",
-        "palo_enc": "aes-128-cbc",
-        "palo_auth": "sha256"
-    },
-    "high_security": {
-        "name": "🛡️ Alta Seguridad (AES256-SHA256)",
-        "phase1_prop": "aes256-sha256",
-        "phase2_prop": "aes256-sha256",
-        "palo_enc": "aes-256-cbc",
-        "palo_auth": "sha256"
-    }
+    "lab_legacy": { "name": "Lab (DES-SHA256)", "phase1_prop": "des-sha256", "phase2_prop": "des-sha256", "palo_enc": "des", "palo_auth": "sha256" },
+    "production": { "name": "Producción (AES256)", "phase1_prop": "aes256-sha256", "phase2_prop": "aes256-sha256", "palo_enc": "aes-256-cbc", "palo_auth": "sha256" }
 }
 
-def to_forti_format(cidr_str):
+# Función auxiliar para formatear Subnets para Fortinet (requiere "IP MASK")
+def to_forti_subnet(cidr):
     try:
-        iface = ipaddress.IPv4Interface(cidr_str)
-        return f"{iface.ip} {iface.netmask}"
-    except Exception:
-        return cidr_str
+        net = ipaddress.ip_network(cidr, strict=False)
+        return f"{net.network_address} {net.netmask}"
+    except:
+        return cidr
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
         data = request.form.to_dict()
-        
-        # 1. Aplicar Perfil
         data.update(VPN_PROFILES[data.get('vpn_profile', 'lab_legacy')])
-        data['dh_group'] = data.get('dh_group_select', '14')
+        data['dh_group'] = "14"
 
-        # 2. Normalizar booleanos
-        data['fg_is_dhcp'] = 'fg_is_dhcp' in data
-        data['pa_is_dhcp'] = 'pa_is_dhcp' in data
+        # 1. Calcular Peers (Solo para saber a dónde conectar)
+        # Aunque no configuremos la WAN, necesitamos saber la IP del vecino.
+        data['fg_remote_gw'] = data['pa_wan_ip'] # Forti apunta a PA
+        data['pa_peer_ip'] = data['fg_wan_ip']   # PA apunta a Forti
 
-        # 3. Lógica de Peer IP
-        if not data['fg_is_dhcp']:
-            data['pa_peer_ip'] = data['fg_wan_ip'].split('/')[0]
-        else:
-            data['pa_peer_ip'] = "10.100.100.114"
-
-        if not data['pa_is_dhcp']:
-            data['fg_remote_gw'] = data['pa_wan_ip'].split('/')[0]
-        else:
-            data['fg_remote_gw'] = "10.100.100.115"
-
-        # 4. Variables de Túnel
-        data['fg_tunnel_ip'] = "169.255.1.1 255.255.255.255"
-        data['fg_remote_tunnel_ip'] = "169.255.1.2 255.255.255.255"
-        data['pa_tunnel_ip'] = "169.255.1.2/32"
-        data['pa_nexthop_ip'] = "169.255.1.1"
+        # 2. Calcular IPs del Túnel (VTI)
+        # El usuario ingresa la IP (ej 169.255.1.1), nosotros le agregamos la máscara /32
+        data['fg_tunnel_ip_cidr'] = f"{data['fg_tunnel_ip_input']} 255.255.255.255"
+        data['fg_remote_tunnel_ip_cidr'] = f"{data['pa_tunnel_ip_input']} 255.255.255.255"
         
-        # 5. Formateo de IPs para Fortinet (Conversión a Decimal)
-        data['fg_lan1_fmt'] = to_forti_format(data['fg_lan1_ip'])
-        data['fg_lan2_fmt'] = to_forti_format(data['fg_lan2_ip'])
-        
-        # --- CORRECCIÓN AQUÍ: ---
-        # Ya no usamos 'pa_lan_subnet'. Ahora formateamos las 2 LANs de Palo Alto 
-        # para crear rutas estáticas individuales en el FortiGate.
-        data['pa_lan1_fmt'] = to_forti_format(data['pa_lan1_ip'])
-        data['pa_lan2_fmt'] = to_forti_format(data['pa_lan2_ip'])
-        # ------------------------
+        data['pa_tunnel_ip_cidr'] = f"{data['pa_tunnel_ip_input']}/32"
+        data['pa_nexthop_ip'] = data['fg_tunnel_ip_input']
 
-        # 6. Generar ZIP
+        # 3. Formatear Subnets para Rutas Estáticas
+        # Fortinet necesita formato "10.x.x.0 255.255.255.0" para el destino de la ruta
+        data['fg_route_dst1'] = to_forti_subnet(data['pa_lan1_subnet'])
+        data['fg_route_dst2'] = to_forti_subnet(data['pa_lan2_subnet'])
+
+        # 4. Generar ZIP
         memory_file = io.BytesIO()
         with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
             
-            templates_map = {
+            templates = {
                 'inventory.j2': 'inventory/hosts.yml',
                 'all_vars.j2': 'group_vars/all.yml',
                 'site.j2': 'site.yml'
             }
-
-            for template_file, dest_path in templates_map.items():
-                content = render_template(f'ansible_templates/{template_file}', **data)
-                zf.writestr(dest_path, content)
-
-            ansible_cfg = """[defaults]
-inventory = ./inventory/hosts.yml
-host_key_checking = False
-retry_files_enabled = False
-deprecation_warnings = False
-interpreter_python = auto_silent
-timeout = 30
-"""
-            zf.writestr('ansible.cfg', ansible_cfg)
+            
+            for tmpl, dest in templates.items():
+                content = render_template(f'ansible_templates/{tmpl}', **data)
+                zf.writestr(dest, content)
+            
+            # Config base
+            zf.writestr('ansible.cfg', "[defaults]\ninventory=./inventory/hosts.yml\nhost_key_checking=False\ntimeout=30\n")
 
         memory_file.seek(0)
-        return send_file(
-            memory_file,
-            download_name="ansible_vpn_config.zip",
-            as_attachment=True
-        )
+        return send_file(memory_file, download_name="ansible_overlay_config.zip", as_attachment=True)
 
     return render_template('index.html', profiles=VPN_PROFILES)
 
