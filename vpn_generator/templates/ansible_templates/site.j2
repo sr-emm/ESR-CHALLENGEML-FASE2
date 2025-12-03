@@ -1,8 +1,8 @@
 ---
 # ==============================================================================
-# PLAY 1: FORTIGATE - OVERLAY (VPN + ROUTING + POLICIES)
+# PLAY 1: CONFIGURACIÓN FORTIGATE (SITE A)
 # ==============================================================================
-- name: Configurar Overlay FortiGate
+- name: Despliegue Automatizado FortiGate (Site A)
   hosts: fortigates
   connection: local
   gather_facts: no
@@ -13,27 +13,52 @@
     - group_vars/all.yml
 
   tasks:
-    # TAREA 0: Esperar API
+    # --- TAREA 0: Esperar API ---
     - name: Check API Availability
       ansible.builtin.wait_for:
-        host: "{{ ansible_host }}"
+        host: "{{ fg_mgmt_ip }}"      # <--- CORREGIDO: Variable de Python (IP directa)
         port: 443
         timeout: 10
       delegate_to: localhost
       ignore_errors: yes
 
-    # 1. VPN (IPSec)
+    # --- 1. Interfaces LAN ---
+    - name: Configurar LAN 1 ({{ fg_lan1_interface }})
+      fortios_system_interface:
+        vdom: "root"
+        state: "present"
+        system_interface:
+          name: "{{ fg_lan1_interface }}"
+          vdom: "root"
+          mode: "static"
+          ip: "{{ fg_lan1_fmt }}"
+          allowaccess: "ping,https,ssh"
+          alias: "LAN_1_Generada"
+
+    - name: Configurar LAN 2 ({{ fg_lan2_interface }})
+      fortios_system_interface:
+        vdom: "root"
+        state: "present"
+        system_interface:
+          name: "{{ fg_lan2_interface }}"
+          vdom: "root"
+          mode: "static"
+          ip: "{{ fg_lan2_fmt }}"
+          allowaccess: "ping"
+          alias: "LAN_2_Generada"
+
+    # --- 2. VPN (IPSec) ---
     - name: Configurar VPN Phase 1
       fortios_vpn_ipsec_phase1_interface:
         vdom: "root"
         state: "present"
         vpn_ipsec_phase1_interface:
           name: "{{ vpn_name }}"
-          interface: "{{ fg_wan_intf }}" # Usa la interfaz existente, no la crea
+          interface: "{{ fg_wan_interface }}"
           ike_version: "2"
           peertype: "any"
           net_device: "disable"
-          proposal: "{{ phase1_proposal }}"
+          proposal: "{{ phase1_prop }}"       # <--- CORREGIDO: Variable de Python (phase1_prop)
           dhgrp: "{{ dh_group }}"
           remote_gw: "{{ fg_remote_gw }}" 
           psksecret: "{{ vpn_psk }}"
@@ -46,14 +71,14 @@
         vpn_ipsec_phase2_interface:
           name: "{{ vpn_name }}-P2"
           phase1name: "{{ vpn_name }}"
-          proposal: "{{ phase2_proposal }}"
+          proposal: "{{ phase2_prop }}"       # <--- CORREGIDO: Variable de Python (phase2_prop)
           dhgrp: "{{ dh_group }}"
           keylifeseconds: 3600
           src_subnet: "0.0.0.0 0.0.0.0"
           dst_subnet: "0.0.0.0 0.0.0.0"
           auto_negotiate: "enable"
 
-    # 2. Interfaz de Túnel (Overlay)
+    # --- 3. Interfaz de Túnel ---
     - name: Configurar Interfaz Túnel (VTI)
       fortios_system_interface:
         vdom: "root"
@@ -61,23 +86,23 @@
         system_interface:
           name: "{{ vpn_name }}"
           vdom: "root"
-          type: "tunnel"
-          interface: "{{ fg_wan_intf }}"
-          ip: "{{ fg_tunnel_ip }}"        # Variable calculada /32
-          remote_ip: "{{ fg_remote_tunnel_ip }}"
+          ip: "{{ fg_tunnel_ip }}"
           allowaccess: "ping"
+          type: "tunnel"
+          interface: "{{ fg_wan_interface }}"
+          remote_ip: "{{ fg_remote_tunnel_ip }}"
 
-    # 3. Routing (Rutas Estáticas hacia LANs remotas)
-    - name: Ruta hacia Site B (LAN 1)
+    # --- 4. Routing ---
+    - name: Ruta Estática hacia Site B (LAN 1)
       fortios_router_static:
         vdom: "root"
         state: "present"
         router_static:
           seq_num: "10"
-          dst: "{{ fg_route_dst1 }}"      # Variable formateada en Python
+          dst: "{{ fg_route_dst1 }}"
           device: "{{ vpn_name }}"
 
-    - name: Ruta hacia Site B (LAN 2)
+    - name: Ruta Estática hacia Site B (LAN 2)
       fortios_router_static:
         vdom: "root"
         state: "present"
@@ -86,8 +111,8 @@
           dst: "{{ fg_route_dst2 }}"
           device: "{{ vpn_name }}"
 
-    # 4. Políticas de Firewall
-    - name: Politica Salida (LAN -> VPN)
+    # --- 5. Políticas de Firewall ---
+    - name: Politica Firewall (Salida)
       fortios_firewall_policy:
         vdom: "root"
         state: "present"
@@ -95,19 +120,22 @@
           policyid: "100"
           name: "LAN-to-VPN"
           srcintf:
-            - name: "{{ fg_lan1_intf }}"
-            - name: "{{ fg_lan2_intf }}"
+            - name: "{{ fg_lan1_interface }}"
+            - name: "{{ fg_lan2_interface }}"
           dstintf:
             - name: "{{ vpn_name }}"
-          srcaddr: [{name: "all"}]
-          dstaddr: [{name: "all"}]
+          srcaddr:
+            - name: "all"
+          dstaddr:
+            - name: "all"
           action: "accept"
           schedule: "always"
-          service: [{name: "ALL"}]
+          service:
+            - name: "ALL"
           nat: "disable"
           logtraffic: "all"
 
-    - name: Politica Entrada (VPN -> LAN)
+    - name: Politica Firewall (Entrada)
       fortios_firewall_policy:
         vdom: "root"
         state: "present"
@@ -117,21 +145,24 @@
           srcintf:
             - name: "{{ vpn_name }}"
           dstintf:
-            - name: "{{ fg_lan1_intf }}"
-            - name: "{{ fg_lan2_intf }}"
-          srcaddr: [{name: "all"}]
-          dstaddr: [{name: "all"}]
+            - name: "{{ fg_lan1_interface }}"
+            - name: "{{ fg_lan2_interface }}"
+          srcaddr:
+            - name: "all"
+          dstaddr:
+            - name: "all"
           action: "accept"
           schedule: "always"
-          service: [{name: "ALL"}]
+          service:
+            - name: "ALL"
           nat: "disable"
           logtraffic: "all"
 
 
 # ==============================================================================
-# PLAY 2: PALO ALTO - OVERLAY
+# PLAY 2: CONFIGURACIÓN PALO ALTO (SITE B)
 # ==============================================================================
-- name: Configurar Overlay Palo Alto
+- name: Despliegue Automatizado Palo Alto (Site B)
   hosts: paloaltos
   connection: local
   gather_facts: no
@@ -142,9 +173,38 @@
     - group_vars/all.yml
 
   tasks:
-    # 1. Interfaz Túnel (Solo esta, no las físicas)
-    - name: Configurar Interfaz Túnel
-      panos_interface:
+    # --- 1. Interfaces ---
+    - name: Configurar WAN ({{ pa_wan_interface }})
+      paloaltonetworks.panos.panos_interface:
+        provider: "{{ '{{' }} pa_provider {{ '}}' }}"
+        if_name: "{{ pa_wan_interface }}"
+        mode: "layer3"
+        enable_dhcp: "{{ 'true' if pa_is_dhcp else 'false' }}"
+        create_default_route: "{{ 'true' if pa_is_dhcp else 'false' }}"
+        ip: "{{ [pa_wan_ip] if not pa_is_dhcp else omit }}"
+        vr_name: "default"
+        zone_name: "untrust"
+
+    - name: Configurar LAN 1 ({{ pa_lan1_interface }})
+      paloaltonetworks.panos.panos_interface:
+        provider: "{{ '{{' }} pa_provider {{ '}}' }}"
+        if_name: "{{ pa_lan1_interface }}"
+        mode: "layer3"
+        ip: ["{{ pa_lan1_ip }}"]
+        vr_name: "default"
+        zone_name: "trust"
+
+    - name: Configurar LAN 2 ({{ pa_lan2_interface }})
+      paloaltonetworks.panos.panos_interface:
+        provider: "{{ '{{' }} pa_provider {{ '}}' }}"
+        if_name: "{{ pa_lan2_interface }}"
+        mode: "layer3"
+        ip: ["{{ pa_lan2_ip }}"]
+        vr_name: "default"
+        zone_name: "trust"
+
+    - name: Configurar Interfaz Túnel (tunnel.1)
+      paloaltonetworks.panos.panos_interface:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
         if_name: "tunnel.1"
         mode: "layer3"
@@ -152,40 +212,40 @@
         vr_name: "default"
         zone_name: "VPN_Zone"
 
-    # 2. Crypto Profiles
-    - name: Perfil IKE
-      panos_ike_crypto_profile:
+    # --- 2. Perfiles Criptográficos ---
+    - name: Perfil IKE (Phase 1)
+      paloaltonetworks.panos.panos_ike_crypto_profile:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
         name: "{{ vpn_name }}-IKE"
         dh_group: ["group{{ dh_group }}"]
-        encryption: ["{{ pa_enc_algo }}"]
-        hash: ["{{ pa_auth_algo }}"]
+        encryption: ["{{ palo_enc }}"]
+        hash: ["{{ palo_auth }}"]
         lifetime_seconds: 43200
 
-    - name: Perfil IPsec
-      panos_ipsec_profile:
+    - name: Perfil IPsec (Phase 2)
+      paloaltonetworks.panos.panos_ipsec_profile:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
         name: "{{ vpn_name }}-IPSEC"
         dh_group: "group{{ dh_group }}"
-        esp_encryption: ["{{ pa_enc_algo }}"]
-        esp_authentication: ["{{ pa_auth_algo }}"]
+        esp_encryption: ["{{ palo_enc }}"]
+        esp_authentication: ["{{ palo_auth }}"]
         lifetime_seconds: 3600
 
-    # 3. VPN Objects
-    - name: IKE Gateway
-      panos_ike_gateway:
+    # --- 3. VPN ---
+    - name: Configurar IKE Gateway
+      paloaltonetworks.panos.panos_ike_gateway:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
         name: "{{ vpn_name }}-GW"
         version: "ikev2"
-        interface: "{{ pa_wan_intf }}"    # Usa la interfaz existente
+        interface: "{{ pa_wan_interface }}"
         peer_ip: "{{ pa_peer_ip }}"
         pre_shared_key: "{{ vpn_psk }}"
         ikev2_crypto_profile: "{{ vpn_name }}-IKE"
         enable_liveness_check: true
         liveness_check_interval: 5
 
-    - name: IPSec Tunnel
-      panos_ipsec_tunnel:
+    - name: Configurar IPSec Tunnel
+      paloaltonetworks.panos.panos_ipsec_tunnel:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
         name: "{{ vpn_name }}"
         tunnel_interface: "tunnel.1"
@@ -193,8 +253,8 @@
         ipsec_profile: "{{ vpn_name }}-IPSEC"
         enable_tunneling: true
 
-    - name: Proxy ID
-      panos_config_element:
+    - name: Agregar Proxy ID Wildcard
+      paloaltonetworks.panos.panos_config_element:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
         xpath: "/config/devices/entry[@name='localhost.localdomain']/network/tunnel/ipsec/entry[@name='{{ vpn_name }}']/auto-key/proxy-id"
         element: |
@@ -203,45 +263,53 @@
             <remote>0.0.0.0/0</remote>
           </entry>
 
-    # 4. Routing (Hacia las LANs del Forti)
-    - name: Ruta Estática LAN 1
-      panos_static_route:
+    # --- 4. Routing ---
+    - name: Ruta Estática hacia Site A (LAN 1)
+      paloaltonetworks.panos.panos_static_route:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
-        name: "Ruta-a-FG-LAN1"
-        destination: "{{ fg_lan1_cidr }}" 
+        name: "Ruta-a-SiteA-LAN1"
+        destination: "{{ fg_lan1_ip }}" 
         nexthop_type: "ip-address"
-        nexthop: "{{ pa_nexthop_ip }}"
+        nexthop: "{{ fg_tunnel_ip.split(' ')[0] }}"
         interface: "tunnel.1"
         virtual_router: "default"
 
-    - name: Ruta Estática LAN 2
-      panos_static_route:
+    - name: Ruta Estática hacia Site A (LAN 2)
+      paloaltonetworks.panos.panos_static_route:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
-        name: "Ruta-a-FG-LAN2"
-        destination: "{{ fg_lan2_cidr }}" 
+        name: "Ruta-a-SiteA-LAN2"
+        destination: "{{ fg_lan2_ip }}" 
         nexthop_type: "ip-address"
-        nexthop: "{{ pa_nexthop_ip }}"
+        nexthop: "{{ fg_tunnel_ip.split(' ')[0] }}"
         interface: "tunnel.1"
         virtual_router: "default"
 
-    # 5. Políticas
-    - name: Policy Trust-VPN
-      panos_security_rule:
+    # --- 5. Políticas de Seguridad ---
+    - name: Política de Seguridad (Salida VPN)
+      paloaltonetworks.panos.panos_security_rule:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
-        rule_name: "Permitir_Salida_VPN"
+        rule_name: "Permitir_VPN_Salida"
         source_zone: ["trust"]
         destination_zone: ["VPN_Zone"]
+        source_ip: ["any"]
+        destination_ip: ["any"]
+        application: ["any"]
+        service: ["application-default"]
         action: "allow"
 
-    - name: Policy VPN-Trust
-      panos_security_rule:
+    - name: Política de Seguridad (Entrada VPN)
+      paloaltonetworks.panos.panos_security_rule:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
-        rule_name: "Permitir_Entrada_VPN"
+        rule_name: "Permitir_VPN_Entrada"
         source_zone: ["VPN_Zone"]
         destination_zone: ["trust"]
+        source_ip: ["any"]
+        destination_ip: ["any"]
+        application: ["any"]
+        service: ["application-default"]
         action: "allow"
 
-    # 6. Commit
-    - name: COMMIT
-      panos_commit:
+    # --- 6. Commit ---
+    - name: COMMIT FINAL (Palo Alto)
+      paloaltonetworks.panos.panos_commit:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
