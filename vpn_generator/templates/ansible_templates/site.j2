@@ -37,7 +37,13 @@
           ip: "{{ fg_lan2_fmt }}"
           allowaccess: "ping"
           alias: "LAN_2_Generada"
-
+	
+	# --- NUEVO: PAUSA DE ESTABILIDAD ---
+    - name: Esperar a que FortiGate procese cambios de interfaz
+      ansible.builtin.pause:
+        seconds: 5
+    # -----------------------------------
+	
     # --- 2. VPN (IPSec) ---
     - name: Configurar VPN Phase 1
       fortios_vpn_ipsec_phase1_interface:
