@@ -4,7 +4,9 @@
 # ==============================================================================
 - name: Despliegue Automatizado FortiGate (Site A)
   hosts: fortigates
-  connection: httpapi
+  # --- CORRECCIÓN 1: Usar 'local' para evitar error Socket Path Empty ---
+  connection: local
+  # --------------------------------------------------------------------
   gather_facts: no
   collections:
     - fortinet.fortios
@@ -13,6 +15,16 @@
     - group_vars/all.yml
 
   tasks:
+    # --- TAREA 0: Espera de Seguridad (Anti-Lockout) ---
+    - name: Esperar a que la API esté disponible
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 443
+        delay: 2
+        timeout: 300
+      delegate_to: localhost
+      ignore_errors: yes
+
     # --- 1. Interfaces LAN ---
     - name: Configurar LAN 1 ({{ fg_lan1_interface }})
       fortios_system_interface:
@@ -37,12 +49,7 @@
           ip: "{{ fg_lan2_fmt }}"
           allowaccess: "ping"
           alias: "LAN_2_Generada"
-    
-    # --- PAUSA DE ESTABILIDAD ---
-    - name: Esperar a que FortiGate procese cambios de interfaz
-      ansible.builtin.pause:
-        seconds: 5
-    
+
     # --- 2. VPN (IPSec) ---
     - name: Configurar VPN Phase 1
       fortios_vpn_ipsec_phase1_interface:
@@ -54,7 +61,7 @@
           ike_version: "2"
           peertype: "any"
           net_device: "disable"
-          proposal: "{{ phase1_prop }}"       # <--- CORREGIDO (Era phase1_proposal)
+          proposal: "{{ phase1_prop }}"
           dhgrp: "{{ dh_group }}"
           remote_gw: "{{ fg_remote_gw }}" 
           psksecret: "{{ vpn_psk }}"
@@ -67,7 +74,9 @@
         vpn_ipsec_phase2_interface:
           name: "{{ vpn_name }}-P2"
           phase1name: "{{ vpn_name }}"
-          proposal: "{{ phase2_prop }}"       # <--- CORREGIDO (Era phase2_proposal)
+          # --- CORRECCIÓN 2: Usar la variable correcta de Python ---
+          proposal: "{{ phase2_prop }}"
+          # --------------------------------------------------------
           dhgrp: "{{ dh_group }}"
           keylifeseconds: 3600
           src_subnet: "0.0.0.0 0.0.0.0"
@@ -173,7 +182,7 @@
     - name: Configurar WAN ({{ pa_wan_interface }})
       paloaltonetworks.panos.panos_interface:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
-        if_name: "{{ pa_wan_interface }}"     # <--- CORREGIDO (Era pa_wan_intf)
+        if_name: "{{ pa_wan_interface }}"
         mode: "layer3"
         enable_dhcp: "{{ 'true' if pa_is_dhcp else 'false' }}"
         create_default_route: "{{ 'true' if pa_is_dhcp else 'false' }}"
@@ -184,18 +193,18 @@
     - name: Configurar LAN 1 ({{ pa_lan1_interface }})
       paloaltonetworks.panos.panos_interface:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
-        if_name: "{{ pa_lan1_interface }}"    # <--- CORREGIDO
+        if_name: "{{ pa_lan1_interface }}"
         mode: "layer3"
-        ip: ["{{ pa_lan1_ip }}"]              # <--- CORREGIDO
+        ip: ["{{ pa_lan1_ip }}"]
         vr_name: "default"
         zone_name: "trust"
 
     - name: Configurar LAN 2 ({{ pa_lan2_interface }})
       paloaltonetworks.panos.panos_interface:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
-        if_name: "{{ pa_lan2_interface }}"    # <--- CORREGIDO
+        if_name: "{{ pa_lan2_interface }}"
         mode: "layer3"
-        ip: ["{{ pa_lan2_ip }}"]              # <--- CORREGIDO
+        ip: ["{{ pa_lan2_ip }}"]
         vr_name: "default"
         zone_name: "trust"
 
@@ -214,8 +223,8 @@
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
         name: "{{ vpn_name }}-IKE"
         dh_group: ["group{{ dh_group }}"]
-        encryption: ["{{ palo_enc }}"]        # <--- CORREGIDO (Era pa_enc_algo)
-        hash: ["{{ palo_auth }}"]             # <--- CORREGIDO
+        encryption: ["{{ palo_enc }}"]
+        hash: ["{{ palo_auth }}"]
         lifetime_seconds: 43200
 
     - name: Perfil IPsec (Phase 2)
@@ -223,8 +232,8 @@
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
         name: "{{ vpn_name }}-IPSEC"
         dh_group: "group{{ dh_group }}"
-        esp_encryption: ["{{ palo_enc }}"]    # <--- CORREGIDO
-        esp_authentication: ["{{ palo_auth }}"] # <--- CORREGIDO
+        esp_encryption: ["{{ palo_enc }}"]
+        esp_authentication: ["{{ palo_auth }}"]
         lifetime_seconds: 3600
 
     # --- 3. VPN ---
@@ -233,7 +242,7 @@
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
         name: "{{ vpn_name }}-GW"
         version: "ikev2"
-        interface: "{{ pa_wan_interface }}"   # <--- CORREGIDO
+        interface: "{{ pa_wan_interface }}"
         peer_ip: "{{ pa_peer_ip }}"
         pre_shared_key: "{{ vpn_psk }}"
         ikev2_crypto_profile: "{{ vpn_name }}-IKE"
@@ -264,7 +273,7 @@
       paloaltonetworks.panos.panos_static_route:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
         name: "Ruta-a-SiteA-LAN1"
-        destination: "{{ fg_lan1_ip }}"       # <--- CORREGIDO
+        destination: "{{ fg_lan1_cidr }}" 
         nexthop_type: "ip-address"
         nexthop: "{{ fg_tunnel_ip.split(' ')[0] }}"
         interface: "tunnel.1"
@@ -274,7 +283,7 @@
       paloaltonetworks.panos.panos_static_route:
         provider: "{{ '{{' }} pa_provider {{ '}}' }}"
         name: "Ruta-a-SiteA-LAN2"
-        destination: "{{ fg_lan2_ip }}"       # <--- CORREGIDO
+        destination: "{{ fg_lan2_cidr }}" 
         nexthop_type: "ip-address"
         nexthop: "{{ fg_tunnel_ip.split(' ')[0] }}"
         interface: "tunnel.1"
