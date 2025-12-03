@@ -73,7 +73,7 @@
       allowaccess: "ping"
       type: "tunnel"
       interface: "port1"           # <--- REVERTIDO A PORT1 PARA COINCIDIR CON PHASE 1
-      remote_ip: "169.255.1.2 255.255.255.255"
+      remote_ip: "169.255.1.2 255.255.255.252"
 
 # Tareas de Routing y Politicas (Se mantienen igual)
 - name: 4. Configurar Ruta Estatica hacia Site B

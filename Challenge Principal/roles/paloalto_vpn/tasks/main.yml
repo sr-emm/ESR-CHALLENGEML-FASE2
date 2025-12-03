@@ -35,7 +35,7 @@
   paloaltonetworks.panos.panos_interface:
     provider: "{{ pa_provider }}"
     if_name: "tunnel.1"
-    ip: ["169.255.1.2/32"] # Ajustado a /32 para match con FortiGate
+    ip: ["169.255.1.2/30"] 
     create_default_route: false
     enable_dhcp: false
     vr_name: "default"
