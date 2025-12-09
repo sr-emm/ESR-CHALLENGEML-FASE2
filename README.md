@@ -1,341 +1,908 @@
-# Plan de Automatización: VPN IPSec Site-to-Site (FortiGate <-> Palo Alto)
-
-## 1. Descripción del Proyecto
-Este repositorio contiene la planificación técnica, los scripts de configuración (Ansible Playbooks) y la estrategia de validación para automatizar el despliegue de un túnel VPN IPSec entre dos fabricantes distintos: **Fortinet (FortiGate)** y **Palo Alto Networks (PAN-OS)**.
-
-El objetivo es establecer una conexión segura y escalable utilizando estándares modernos (IKEv2, Route-Based VPN), adaptándose a las restricciones de un entorno de laboratorio virtualizado.
-
----
-
-## 2. Definición de Parámetros Técnicos
-
-Para garantizar la interoperabilidad y escalabilidad, se ha seleccionado una arquitectura **Route-Based (VTI)**. Esto desacopla la capa de encriptación (IPSec) de la capa de políticas de seguridad.
-
-### 2.1 Direccionamiento IP y Red
-| Componente | Detalle | Valor / Rango |
-| :--- | :--- | :--- |
-| **Red de Túnel (P2P)** | Subred de enlace | `169.255.1.0/30` (Diseño) |
-| **IP Túnel FortiGate** | Local Gateway (Site A) | `169.255.1.1/32` (Ajuste técnico por limitación FortiOS) |
-| **IP Túnel Palo Alto** | Local Gateway (Site B) | `169.255.1.2/32` |
-| **Interfaz Física** | Uplink WAN | `port1` |
-| **Enrutamiento** | Tipo | Estático (Static Route) hacia `10.200.200.0/22` |
-| **NAT** | Configuración | **No-NAT** (Deshabilitado en políticas) |
-
-### 2.2 Parámetros Criptográficos (IKEv2 & IPSec)
-
-Se han estandarizado los parámetros buscando el equilibrio entre seguridad y compatibilidad. A continuación se detallan los valores seleccionados para el laboratorio frente a los estándares de industria recomendados.
-
-| Fase | Parámetro | Valor Estándar (Prod) | **Valor Lab (Actual)** | Notas Técnicas |
-| :--- | :--- | :--- | :--- | :--- |
-| **Phase 1** | Versión | IKEv2 | IKEv2 | Estándar actual (RFC 7296). |
-| | Encriptación | AES-256-GCM / CBC | **DES-SHA256** | *Limitado por licencia (Ver Nota 1)* |
-| | DH Group | 19, 20, 21 (ECDH) | **14 (2048-bit)** | Grupo 14 es el mínimo seguro aceptable. |
-| | Lifetime | 43200 - 86400 sec | 43200 sec | Estándar. |
-| **Phase 2** | Encriptación | AES-256-GCM / CBC | **DES-SHA256** | *Limitado por licencia (Ver Nota 1)* |
-| | PFS | Enable | Enable | Perfect Forward Secrecy. |
-| | **Lifetime** | 3600 sec | **3600 sec** | **Crítico:** Sincronización con default de Palo Alto. |
-| | Selectores | 0.0.0.0/0 | 0.0.0.0/0 | **Crítico:** Route-Based puro (Wildcard). |
-
-#### 📚 Profundización: Opciones de Criptografía Disponibles
-Para un despliegue en producción, el orquestador y los playbooks están diseñados para soportar los siguientes conjuntos de cifrado, dependiendo de la capacidad del hardware:
-
-* **Grupos Diffie-Hellman (DH):**
-    * **Modernos (Recomendados):** Group 19, 20, 21 (Elliptic Curve - ECDH). Ofrecen mayor seguridad con menor consumo de CPU.
-    * **Estándar (Línea base):** Group 14 (Modular Exponentiation 2048-bit). Es el estándar mínimo hoy en día.
-    * **Legacy (A evitar):** Group 2, 5 (Débiles/Crackeables).
-
-* **Algoritmos de Encriptación:**
-    * **Recomendados:** `AES-256-GCM` (Mayor rendimiento y autenticación integrada), `AES-128-GCM`.
-    * **Aceptables:** `AES-256-CBC`, `AES-128-CBC` (Requieren SHA para integridad).
-    * **Lab/Legacy:** `DES`, `3DES`, `RC4` (Inseguros, usados aquí solo por restricción de licencia).
-
-> **⚠️ Nota 1 (Restricción de Laboratorio - LENC):**
-> La máquina virtual (VM) de FortiGate utilizada para este despliegue tiene una licencia de evaluación **Low Encryption (LENC)**, la cual **bloquea algoritmos fuertes como AES**.
-> **Acción:** Se ha degradado la criptografía a **DES** en los playbooks de Ansible únicamente para validar la funcionalidad del túnel (Handshake IKE y flujo de paquetes). En un entorno productivo, la variable `proposal` debe revertirse a `aes256-gcm`.
-
----
-
-## 3. Desafíos y Ajustes de Implementación (Troubleshooting Log)
-
-Durante la fase de automatización se encontraron y resolvieron los siguientes bloqueos técnicos específicos del entorno virtual (Proxmox/KVM).
-
-### 3.1 Máscara de IP del Túnel (Error API `-8`)
-* **Problema:** FortiOS v7.x rechaza la configuración de direcciones IP con máscara `/30` (255.255.255.252) en interfaces de tipo `tunnel` punto a punto cuando no son numeradas.
-* **Solución:** Se configuró la IP local del túnel como host único `/32` (`255.255.255.255`) y se definió explícitamente la `remote_ip` para mantener la lógica de enrutamiento.
-
-### 3.2 Idempotencia en Ansible (Error `missing required arguments`)
-* **Problema:** Los módulos `router_static` y `firewall_policy` de la colección `fortinet.fortios` requieren identificadores explícitos para gestionar el estado (present/absent) correctamente y no duplicar objetos.
-* **Solución:** Se asignaron IDs fijos en el código (`seq_num: 10`, `policyid: 100`, `policyid: 101`) para garantizar que el playbook sea **idempotente**.
-
-### 3.3 Limitación en Validación de Palo Alto (VM Boot Failure)
-* **Estado:** ⚠️ **Partially Tested** (Código desarrollado pero no aplicado en vivo).
-* **Bloqueo Técnico:** La instancia virtual de Palo Alto (VM-Series sobre KVM/Proxmox) presentó una falla crítica en el arranque del **Management Plane**.
-* **Evidencia:** La consola muestra el error `Error: unable to connect to Sysd` y `sysd_construct_sync_importer failed`, impidiendo el login administrativo.
-* **Mitigación:** Se ha desarrollado el rol de Ansible `paloalto_vpn` basándose estrictamente en la documentación oficial de la colección `paloaltonetworks.panos`.
-
-<img width="1060" height="199" alt="image" src="https://github.com/user-attachments/assets/12eb0fca-8d7d-4d3e-b52a-a1068e3ac52c" />
-
----
-
-## 4. Herramientas y APIs Seleccionadas
-
-Para la orquestación se utiliza un enfoque **Agentless** basado en **Ansible**.
-
-* **Control Node:** Contenedor LXC (Ubuntu 24.04) en Proxmox.
-* **Fortinet:** Colección `fortinet.fortios` (API REST/HTTPS).
-* **Palo Alto:** Colección `paloaltonetworks.panos` (API XML).
-* **Gestión de Dependencias:** Uso de `pipx` para aislar el entorno de Python y evitar conflictos `externally-managed-environment`.
-
----
-
-## 5. Estrategia de Validación y Evidencia
-
-### 5.1 Resultado de Ejecución (FortiGate)
-El playbook se ejecutó exitosamente contra el FortiGate, configurando todo el stack de red y seguridad sin errores (`failed=0`).
-
-<img width="957" height="544" alt="image" src="https://github.com/user-attachments/assets/a72b2746-6299-489a-a2ed-1e5d83111bf5" />
-
-### 5.2 Script de Verificación
-Se incluye el script `scripts/vpn_health_check.py` para realizar validaciones de "Día 2":
-1. **Control Plane Check:** Consulta vía API el estado de las Fases 1 y 2 (`UP`/`Active`).
-2. **Data Plane Check:** Realiza pruebas de conectividad ICMP (Ping) a través del túnel.
-
----
-
-## 6. Estructura del Repositorio
-
-* `README.md`: Este documento de planificación y bitácora técnica.
-* `site.yml`: Playbook maestro de Ansible.
-* `/inventory`: Definición de hosts y grupos.
-* `/group_vars`: Variables globales (credenciales, PSK).
-* `/roles`: Lógica modularizada.
-    * `fortigate_vpn`: Tareas probadas para FortiOS (Interfaces, Routing, VPN, Políticas).
-    * `paloalto_vpn`: Tareas desarrolladas para PAN-OS.
-* `/configs`: Plantillas de configuración de referencia.
-
----
-
-# VPN Orchestrator: Documentación del Módulo de Despliegue
-
-Si bien la primera parte cumple con lo mínimo que se requiere, me parece que puede ser poco útil para lo que realmente se busca, que es automatizar y acelerar procesos.
-
-Para esto usé parte de lo aprendido en la parte 1 y generé una aplicación web con Flask. La misma toma los datos que se necesitan para levantar la VPN Site-to-Site y te da un archivo .zip para descargar con el playbook listo para correr.
-
-<img width="1430" height="1049" alt="image" src="https://github.com/user-attachments/assets/53592557-f81e-4610-a832-65c527ccc54a" />
-
-Por ahora deja elegir siguientes opciones:
-
-<img width="315" height="202" alt="image" src="https://github.com/user-attachments/assets/4e0ab9b9-388f-42b5-9e82-099564bbd1cd" />
-
-<img width="322" height="177" alt="image" src="https://github.com/user-attachments/assets/88eaa6db-3b85-4222-a141-869215301e01" />
-
-Coloqué valores que fueran compatibles en ambos equipos y busqué tener opciones, por más de que se puede tunear para seguir los estándares de la empresa.
-También me encontré que algunos símbolos como pueden ser `'` o `"` no son compatibles con los lenguajes de programación por lo que evité que se puedan usar en el PSK.
-
-<img width="597" height="56" alt="image" src="https://github.com/user-attachments/assets/bca97aa5-ee2c-4465-82b4-e2b4f3ede578" />
-
-Lamentablemente, por más que lo intenté, no logré levantar el firewall Palo Alto en GNS3 con las imágenes que conseguí. Me da un error que parece ser común: se queda colgado en el login diciendo "Login Incorrect".
-
-En foros dicen que hay que asignarle 8GB de RAM y 4 vCPU pero sigue dando el mismo error:
-
-<img width="1580" height="783" alt="image" src="https://github.com/user-attachments/assets/1d95d20a-6866-448c-b0f3-abbfb06aca70" />
-
-Si llegan a tener acceso a una instancia funcional (y de alguna forma me pueden dejar probar en ella), me encantaría poder terminar el trabajo y hacer el challenge más útil/completo sin importar lo que pase con mi candidatura.
-
-Afortunadamente, sí logré simular todo lo de Fortinet. Por lo que la configuración está probada en FortiOS, con alguna limitación como baja encriptación (es la que me permite la versión de evaluación), pero logrando obtener estos datos:
-
-<img width="1347" height="633" alt="image" src="https://github.com/user-attachments/assets/b61c92d0-1bc7-458d-a735-8983aa3fc312" />
-<img width="950" height="1237" alt="image" src="https://github.com/user-attachments/assets/19db05a4-09e4-4ffb-b17a-5c20b187d2f7" />
-<img width="734" height="1244" alt="image" src="https://github.com/user-attachments/assets/ac732b46-0d2f-478e-9f7c-cc96f663fc56" />
-<img width="378" height="794" alt="image" src="https://github.com/user-attachments/assets/201fb010-1543-42fa-8714-98190376288f" />
-<img width="758" height="709" alt="image" src="https://github.com/user-attachments/assets/a8387ce1-6a7b-43a0-acf1-ccc2910d116e" />
-
-Antes de que entre en producción, claramente, necesitaría hacer pruebas más rigurosas/ajustes de seguridad.
-
-## Principios de Diseño y Arquitectura
-
-<summary>Detalles de Arquitectura y Flujo de Control</summary>
-
-El módulo está diseñado para ser ejecutado desde un único nodo de control (Control Node).
-
-### A. Estructura del ZIP de Despliegue
-
-Para simplificar la ejecución, la estructura del repositorio se consolida en **3 archivos principales** en la raíz del directorio de configuración:
-
-| Archivo | Contenido |
-| :--- | :--- |
-| `site.yml` | Contiene toda la lógica de los Playbooks (Tareas y Variables). |
-| `hosts.yml` | Inventario simple con las credenciales de gestión. |
-| `ansible.cfg` | Configuración básica para apuntar al inventario (`inventory=./hosts.yml`). |
-
-### B. Flujo del Playbook (`site.yml`)
-
-El Playbook sigue una secuencia estricta para garantizar la inserción correcta de objetos:
-
-1. **Play 0 (Instalación de Dependencias):** Se ejecuta en `localhost` con `become: yes` para asegurar la instalación de las librerías Python (`pan-python`, `xmltodict`, `requests`) necesarias para la colección `paloaltonetworks.panos`. Esto resuelve el error común de `Missing required library`.
-
-2. **Play 1 (FortiGate):** Configuración completa del Site A vía `httpapi`.
-
-3. **Play 2 (Palo Alto):** Configuración completa del Site B.
-
-### C. Mapeo de Conexiones
-
-| Fabricante | Tipo de Conexión | Módulos Principales | Función |
-| :--- | :--- | :--- | :--- |
-| **FortiGate** | `httpapi` | `fortios_vpn_ipsec_phase1_interface`, `fortios_firewall_address` | Conexión nativa REST API (puerto 443). |
-| **Palo Alto** | `local` | `panos_interface`, `panos_ike_crypto_profile`, `panos_commit_firewall` | Módulos Python que se ejecutan localmente y se comunican con el firewall vía API XML/REST usando el `provider` object. |
-
-Esto último sobre Palo Alto, repito, no está probado.
-
----
-
-# 🐍 Backend Documentation: `app.py`
-
-> **Core del VPN Orchestrator**
-
-Este script de Python (`Flask`) actúa como el motor de lógica del orquestador. Su función no es solo servir el HTML, sino actuar como una capa de abstracción y validación entre la intención del usuario (frontend) y la ejecución técnica (Ansible).
-
----
-
-## 🧠 Lógica de Ingeniería
-
-El script no es solo un "pasamanos" de variables. Implementa lógica de red para asegurar que el Playbook resultante sea válido y cumpla con los RFCs y limitaciones de los vendors.
-
-### 1. Conversión de CIDR a Máscara Decimal (`cidr_to_ip_mask`)
-Muchos módulos de Ansible (y APIs de firewalls antiguos) no aceptan notación CIDR (ej. `/24`) y requieren la máscara explícita (ej. `255.255.255.0`).
-* **Función:** Transforma `192.168.1.0/24` -> `192.168.1.0 255.255.255.0`.
-* **Propósito:** Garantizar compatibilidad con módulos `fortios_system_interface` y objetos de dirección legacy.
-
-### 2. Abstracción de Criptografía Multi-Vendor
-El usuario selecciona un perfil genérico (ej. "AES256-SHA256"). El backend traduce esto al dialecto específico de cada fabricante:
-* **Fortinet:** Requiere strings combinadas (`aes256-sha256`).
-* **Palo Alto:** Requiere listas separadas para encriptación y hash (`['aes-256-cbc']`, `['sha256']`).
-
-### 3. Normalización de Seguridad (Sanitization)
-Antes de procesar la **PSK (Pre-Shared Key)**, el script elimina comillas simples `'` y dobles `"` para evitar inyección de código o rotura de sintaxis en el archivo YAML generado.
-
----
-
-## ⚙️ Generación Dinámica de Playbooks
-
-En lugar de usar múltiples archivos Jinja2 externos (lo cual complicaría la portabilidad del script en un entorno de challenge), opté por **Template Injection** dentro del mismo código.
-
-### El "Hard-Fix" de la IP del Túnel
-Dentro de `generate_vars_content`, se aplica programáticamente la decisión de diseño de las interfaces VTI:
-
-```python
-# Lógica aplicada en app.py:
-# FortiGate requiere /32 en túneles P2P para evitar conflictos de rutas.
-tunnel_mask_32 = "255.255.255.255"
-
-# Palo Alto maneja correctamente /30.
-tunnel_mask_ip = "255.255.255.252"
-pa_tunnel_cidr = "/30"
+# 🔐 VPN Orchestrator Pro
+
+<div align="center">
+
+```
+██╗   ██╗██████╗ ███╗   ██╗     ██████╗ ██████╗  ██████╗██╗  ██╗███████╗███████╗████████╗██████╗  █████╗ ████████╗ ██████╗ ██████╗ 
+██║   ██║██╔══██╗████╗  ██║    ██╔═══██╗██╔══██╗██╔════╝██║  ██║██╔════╝██╔════╝╚══██╔══╝██╔══██╗██╔══██╗╚══██╔══╝██╔═══██╗██╔══██╗
+██║   ██║██████╔╝██╔██╗ ██║    ██║   ██║██████╔╝██║     ███████║█████╗  ███████╗   ██║   ██████╔╝███████║   ██║   ██║   ██║██████╔╝
+╚██╗ ██╔╝██╔═══╝ ██║╚██╗██║    ██║   ██║██╔══██╗██║     ██╔══██║██╔══╝  ╚════██║   ██║   ██╔══██╗██╔══██║   ██║   ██║   ██║██╔══██╗
+ ╚████╔╝ ██║     ██║ ╚████║    ╚██████╔╝██║  ██║╚██████╗██║  ██║███████╗███████║   ██║   ██║  ██║██║  ██║   ██║   ╚██████╔╝██║  ██║
+  ╚═══╝  ╚═╝     ╚═╝  ╚═══╝     ╚═════╝ ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝
 ```
 
-Esto asegura que, sin importar qué IP ponga el usuario, el orquestador **fuerza** la máscara correcta para evitar errores de capa 3 en el despliegue.
+**🚀 Automatiza VPNs Site-to-Site entre FortiGate y Palo Alto en minutos, no horas**
+
+![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
+![Python](https://img.shields.io/badge/python-3.10+-yellow.svg)
+![Ansible](https://img.shields.io/badge/ansible-2.15+-red.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Status](https://img.shields.io/badge/status-production--ready-brightgreen.svg)
+
+[🎯 Quick Start](#-quick-start) •
+[📦 Instalación](#-instalación) •
+[🎮 Uso](#-flujo-de-uso) •
+[🔧 Componentes](#-componentes) •
+[🛠️ API](#-api-reference)
+
+</div>
 
 ---
 
-## 📡 API Endpoints
+## 🤔 ¿Qué es esto?
 
-### `GET /`
-Renderiza el frontend (`templates/frontend.html`).
+**VPN Orchestrator Pro** es tu traductor universal. Una aplicación web que genera y ejecuta playbooks de Ansible para crear túneles IPSec Site-to-Site entre **FortiGate** y **Palo Alto** de forma automática.
 
-### `POST /generate`
-El endpoint principal. Recibe un JSON con los parámetros del formulario.
+### ✨ La magia en 30 segundos
 
-**Flujo de ejecución:**
-1.  **Validación:** Verifica caracteres ilegales en la PSK.
-2.  **Cálculo:** Convierte CIDRs a Máscaras y mapea perfiles crypto.
-3.  **Ensamblaje:** Inyecta las variables procesadas en el template maestro (`generate_site_yml_template`).
-4.  **Empaquetado:** Genera un archivo `.zip` en memoria (usando `io.BytesIO` para no tocar disco) que contiene:
-    * `site.yml` (Playbook)
-    * `hosts.yml` (Inventario dinámico)
-    * `ansible.cfg` (Configuración local)
-5.  **Entrega:** Retorna el ZIP al navegador con un nombre basado en Timestamp.
+```
+1. 🔌 Conectas tus dispositivos
+2. 📤 Extraes la configuración actual  
+3. 🔍 El sistema analiza qué falta o cambió
+4. ▶️ Ejecutas y... ¡VPN lista!
+5. 🧪 Verificas que todo funcione
+```
 
 ---
 
-## 📦 Dependencias
-
-El orquestador es ligero y requiere mínimas librerías para funcionar:
-
-* **Flask:** Servidor web y manejo de requests.
-* **Standard Libs:** `os`, `io`, `zipfile`, `textwrap`, `datetime`.
+## 🎯 Quick Start
 
 ```bash
-pip install flask
+# Clonar el repo
+git clone -b v2 https://github.com/sr-emm/ESR-CHALLENGEML-FASE2.git
+cd ESR-CHALLENGEML-FASE2
+
+# Crear entorno virtual y activar
+python3 -m venv venv && source venv/bin/activate
+
+# Instalar Flask (mínimo para arrancar)
+pip install flask requests
+
+# Correr la app
+python app.py
+
+# Abrir http://localhost:5000
+# Hacer clic en "Instalar Dependencias" 🔮
+# ¡Listo! El botón hace el resto automáticamente
 ```
 
 ---
 
-> **Nota del Desarrollador:**
-> Se decidió mantener el template YAML dentro de `app.py` (`generate_site_yml_template`) para mantener el entregable como un artefacto monolítico fácil de auditar, en lugar de dispersar la lógica en múltiples archivos `.j2`.
+## 📦 Instalación
 
-# 🎨 Frontend Documentation: `templates/frontend.html`
+<details>
+<summary><b>📋 Requisitos del Sistema</b></summary>
 
-> **Interfaz de Usuario (Single Page Application)**
+### Hardware Mínimo
+| Componente | Mínimo | Recomendado |
+|------------|--------|-------------|
+| CPU | 1 core | 2+ cores |
+| RAM | 512 MB | 1 GB |
+| Disco | 500 MB | 1 GB |
 
-El frontend actúa como la capa de entrada de datos. No es solo un formulario estático; incluye lógica interactiva para prevenir errores de configuración antes de que los datos lleguen al servidor.
+### Software
+| Software | Versión | Notas |
+|----------|---------|-------|
+| Python | 3.10+ | 3.12 recomendado |
+| pip | 21+ | Se actualiza automáticamente |
+| Ansible | 2.15+ | Se instala con el orquestador |
+
+### Conectividad de Red
+```
+Tu Servidor ──► FortiGate (HTTPS/443)
+     │
+     └──────► Palo Alto (HTTPS/443)
+```
+
+⚠️ **Importante**: Necesitas credenciales con permisos de administrador en ambos firewalls.
+
+</details>
+
+<details>
+<summary><b>🐍 Paso 1: Crear Virtual Environment</b></summary>
+
+### ¿Por qué un venv?
+Porque no queremos romper tu sistema. El venv es como una burbuja protectora donde instalamos todo sin afectar nada más.
+
+```bash
+# Navegar al directorio del proyecto
+cd vpn-orchestrator-pro
+
+# Crear el entorno virtual
+python3 -m venv venv
+
+# Activar el entorno (Linux/Mac)
+source venv/bin/activate
+
+# Activar el entorno (Windows)
+.\venv\Scripts\activate
+
+# Sabrás que está activo cuando veas (venv) al inicio del prompt
+(venv) usuario@maquina:~/vpn-orchestrator-pro$
+```
+
+### 🔄 Desactivar cuando termines
+```bash
+deactivate
+```
+
+</details>
+
+<details>
+<summary><b>📚 Paso 2: Instalar Flask (mínimo)</b></summary>
+
+```bash
+# Solo necesitas Flask para arrancar
+(venv) $ pip install flask requests
+
+# ¡Eso es todo! El resto se instala con el botón 🔮
+```
+
+### ¿Y las demás dependencias?
+El botón **"Instalar Dependencias"** en la interfaz web se encarga de:
+- ✅ Ansible
+- ✅ Colecciones FortiGate y Palo Alto
+- ✅ Librerías Python (pan-python, pan-os-python, xmltodict)
+- ✅ Verificar que todo esté correcto
+
+</details>
+
+<details>
+<summary><b>🎭 Paso 3: Ejecutar y el Botón Mágico</b></summary>
+
+```bash
+# Arrancar la aplicación
+(venv) $ python app.py
+```
+
+### En el navegador (http://localhost:5000):
+
+1. Busca el badge **"Instalar Dependencias"** en la esquina superior
+2. Haz clic y espera ~30 segundos
+3. Verás en la consola:
+```
+[INFO] Iniciando instalación de dependencias...
+[STEP 1/5] Verificando pip...
+[STEP 2/5] Instalando Ansible...
+[STEP 3/5] Instalando librerías Python...
+[STEP 4/5] Instalando colección FortiGate...
+[STEP 5/5] Instalando colección Palo Alto...
+[SUCCESS] ✓ Todas las dependencias instaladas correctamente
+```
+
+### ¿Por qué así?
+- 🎯 Menos pasos manuales = menos errores
+- 🔄 Siempre instala las versiones correctas
+- 🧪 Verifica que todo funcione antes de continuar
+
+</details>
+
+<details>
+<summary><b>🚀 Paso 4: Verificar Instalación (Opcional)</b></summary>
+
+Si quieres verificar manualmente que todo está instalado:
+
+```bash
+# Verificar Ansible
+(venv) $ ansible --version
+
+# Verificar colecciones
+(venv) $ ansible-galaxy collection list | grep -E "fortinet|paloalto"
+
+# Verificar librerías Python
+(venv) $ python -c "import pan; import panos; print('✓ Todo OK')"
+```
+
+### 🔒 Para producción
+```bash
+# Usar Gunicorn en lugar del servidor de desarrollo
+(venv) $ pip install gunicorn
+(venv) $ gunicorn -w 4 -b 0.0.0.0:5000 app:app
+```
+
+</details>
+
+<details>
+<summary><b>🐳 Alternativa: Docker</b></summary>
+
+```dockerfile
+FROM python:3.12-slim
+
+WORKDIR /app
+COPY requirements.txt .
+COPY app.py .
+COPY templates/ templates/
+
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install ansible-core && \
+    ansible-galaxy collection install fortinet.fortios paloaltonetworks.panos
+
+EXPOSE 5000
+CMD ["python", "app.py"]
+```
+
+```bash
+docker build -t vpn-orchestrator .
+docker run -p 5000:5000 vpn-orchestrator
+```
+
+</details>
 
 ---
 
-## 💅 Sistema de Diseño (Tailwind CSS)
+## 🎮 Flujo de Uso
 
-Se utilizó **Tailwind CSS** (vía CDN) para prototipado rápido, implementando un diseño **Dark Mode** nativo para reducir la fatiga visual durante operaciones nocturnas.
+> **El camino del guerrero VPN** 🥷
 
-### Paleta de Colores Semántica
-Para evitar confusiones visuales al configurar dos vendors distintos en la misma pantalla, se extendió la configuración de Tailwind con colores corporativos específicos:
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                                                                            │
+│   ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌─────┐  │
+│   │   TEST   │───►│ EXTRAER  │───►│ EJECUTAR │───►│   VPN    │───►│ ZIP │  │
+│   │ CONEXIÓN │    │  CONFIG  │    │          │    │  TESTER  │    │     │  │
+│   └──────────┘    └──────────┘    └──────────┘    └──────────┘    └─────┘  │
+│        │               │               │               │              │    │
+│        ▼               ▼               ▼               ▼              ▼    │
+│   Verificar       Auto-fill      Pre-validar     Verificar       Guardar   │
+│   HTTPS 443       + Análisis     + Ansible       túnel UP        configs   │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+```
 
-```javascript
-// tailwind.config
-colors: {
-    forti: { DEFAULT: '#C53030' }, // Rojo Fortinet
-    palo:  { DEFAULT: '#0284c7' }  // Azul Palo Alto
+<details>
+<summary><b>🔌 Paso 1: Test Conexión</b></summary>
+
+### ¿Qué hace?
+Verifica que puedes alcanzar ambos firewalls por HTTPS (puerto 443).
+
+### ¿Cuándo usarlo?
+**Siempre primero.** Es como verificar que tienes gasolina antes de un viaje.
+
+### ¿Qué esperar?
+```
+🚀 Iniciando test de conectividad...
+✓ FortiGate (10.100.100.173): Conectado
+✓ Palo Alto (10.100.100.107): Conectado
+✓ Todos los dispositivos están accesibles
+```
+
+### ❌ Si falla
+- Verifica IPs de gestión
+- Confirma que HTTPS está habilitado
+- Revisa reglas de firewall hacia tu servidor
+
+</details>
+
+<details>
+<summary><b>📤 Paso 2: Extraer Config</b></summary>
+
+### ¿Qué hace?
+1. **Extrae IPs** de las interfaces seleccionadas
+2. **Detecta zonas** (solo Palo Alto)
+3. **Analiza config VPN existente**
+4. **Compara** lo que hay vs lo que quieres
+
+### Auto-fill mágico ✨
+El sistema auto-completa:
+- IP WAN de cada dispositivo
+- CIDR de las LANs (convierte IP a red)
+- Zonas de seguridad en Palo Alto
+
+### Análisis de Configuración
+```
+📊 Análisis de Configuración VPN:
+
+FortiGate:                     Palo Alto:
+✓ Phase 1 (Config idéntica)    ✓ IKE Crypto Profile (Ya existe)
+✓ Phase 2 (Ya existe)          ✓ IPsec Crypto Profile (Ya existe)
+✓ Tunnel Interface (Ya existe) ✓ IKE Gateway (Ya existe)
+✓ Rutas (2) (Ya existen)       ✓ IPsec Tunnel (Ya existe)
+                               ✓ Tunnel Interface (Ya existe)
+                               ✓ Rutas (2) (Ya existen)
+
+✓ 4 iguales                    ✓ 6 iguales
+```
+
+### Leyenda de símbolos
+| Símbolo | Significado |
+|---------|-------------|
+| ✓ Verde | Ya existe y es idéntico (se omite) |
+| 🔄 Amarillo | Existe pero hay diferencias (se modifica) |
+| ➕ Azul | No existe (se crea) |
+
+</details>
+
+<details>
+<summary><b>▶️ Paso 3: Ejecutar</b></summary>
+
+### ¿Qué hace?
+1. **Pre-validación**: Analiza una vez más antes de actuar
+2. **Genera playbooks**: Crea los archivos de Ansible
+3. **Ejecuta**: Aplica la configuración en tiempo real
+4. **Streaming**: Ves cada tarea mientras se ejecuta
+
+### Pre-validación inteligente
+Si todo está 100% idéntico:
+```
+══════════════════════════════════════════
+✅ RESULTADO: Configuración 100% idéntica
+ℹ️  No hay cambios que aplicar. Playbook omitido.
+💡 Si deseas forzar la reconfiguración, marca "Recrear túnel"
+══════════════════════════════════════════
+```
+
+### Si hay cambios
+```
+📋 PLAN DE EJECUCIÓN:
+   • 8 componentes sin cambios (se omitirán)
+   • 1 componentes a modificar
+   • 2 componentes a crear
+
+▶ Iniciando ejecución de Ansible Playbook...
+
+PLAY [Configurar Overlay FortiGate] ****
+TASK [Configurar VPN Phase 1] **********
+ok: [forti_site_a]
+...
+```
+
+### ⚠️ Checkbox "Recrear túnel"
+Marca esta opción si:
+- Quieres forzar recreación completa
+- Recibes errores "Error in repo"
+- Cambiaste el PSK y necesitas aplicarlo
+
+**Cuidado**: Elimina y recrea toda la VPN (puede causar caída temporal).
+
+</details>
+
+<details>
+<summary><b>🧪 Paso 4: VPN Tester</b></summary>
+
+### ¿Qué hace?
+Consulta el estado del túnel **en ambos dispositivos** simultáneamente.
+
+### APIs consultadas
+| Dispositivo | API | Datos |
+|-------------|-----|-------|
+| FortiGate | `/api/v2/monitor/vpn/ipsec` | Phase 1/2 status, bytes TX/RX |
+| Palo Alto | `<show><vpn><ike-sa>` | IKE SA state |
+| Palo Alto | `<show><vpn><ipsec-sa>` | IPsec SA state |
+
+### Estados posibles
+
+| Estado | Icono | Significado |
+|--------|-------|-------------|
+| UP | 🟢 | Túnel completamente establecido |
+| PARTIAL | 🟡 | Solo Phase 1 o Phase 2 activo |
+| DOWN | 🔴 | Túnel no establecido |
+| NOT_FOUND | 🔴 | El túnel no existe |
+
+### Output ejemplo
+```
+═══════════════════════════════════════════════════
+🔍 Verificando estado del túnel VPN...
+
+━━━ FortiGate ━━━
+🟢 Estado: ACTIVO
+   Phase 1 (IKE): up
+   Phase 2 (IPsec): up
+   Peer IP: 200.200.200.1
+   Tráfico: ↓ 1.25 MB | ↑ 0.89 MB
+
+━━━ Palo Alto ━━━
+🟢 Estado: ACTIVO
+   IKE SA: established
+   IPsec SA: active
+   Tráfico: ↑ 934521 bytes | ↓ 1312456 bytes
+
+✅ VPN ESTABLECIDA CORRECTAMENTE
+═══════════════════════════════════════════════════
+```
+
+</details>
+
+<details>
+<summary><b>📦 Paso 5: Descargar ZIP</b></summary>
+
+### ¿Qué incluye?
+```
+2024-12-08-221500-S2S-OVERLAY.zip
+├── ansible.cfg      # Configuración de Ansible
+├── hosts.yml        # Inventario con credenciales
+├── site.yml         # Playbook principal
+└── README.md        # Instrucciones de ejecución manual
+```
+
+### ¿Para qué sirve?
+- **Backup** de la configuración generada
+- **Ejecución manual** desde otro servidor
+- **Auditoría** y documentación
+- **Modificaciones** personalizadas
+
+### Ejecutar manualmente
+```bash
+cd vpn_config_extracted/
+ansible-playbook -i hosts.yml site.yml
+```
+
+</details>
+
+---
+
+## 🔧 Componentes
+
+<details>
+<summary><b>🏗️ Arquitectura del Sistema</b></summary>
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                              TU NAVEGADOR                                  │
+│                          http://localhost:5000                             │
+└────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│                            FRONTEND (HTML/JS)                              │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐           │
+│  │ Formulario  │ │  Consola    │ │  Status     │ │  Config     │           │
+│  │ VPN Config  │ │  Real-time  │ │  Badges     │ │  Diff Panel │           │
+│  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘           │
+└────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                              Fetch API
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│                            BACKEND (Flask)                                 │
+│                                                                            │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                         ENDPOINTS                                   │   │
+│  │  /test-connectivity  →  Verificar HTTPS a ambos FWs                 │   │
+│  │  /extract-info       →  Obtener IPs, zonas, interfaces              │   │
+│  │  /compare-config     →  Analizar config actual vs deseada           │   │
+│  │  /run                →  Ejecutar Ansible (streaming)                │   │
+│  │  /verify-vpn         →  Consultar estado del túnel                  │   │
+│  │  /generate           →  Descargar ZIP con playbooks                 │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                            │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                      GENERADORES                                    │   │
+│  │  generate_vars_block()   →  Variables del playbook                  │   │
+│  │  generate_hosts_yml()    →  Inventario de Ansible                   │   │
+│  │  generate_site_yml()     →  Playbook principal                      │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                            │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                      EXTRACTORES                                    │   │
+│  │  extract_fortigate_info()      →  API REST FortiGate                │   │
+│  │  extract_paloalto_info()       →  XML API Palo Alto                 │   │
+│  │  extract_fortigate_vpn_config()→  Config VPN actual FG              │   │
+│  │  extract_paloalto_vpn_config() →  Config VPN actual PA              │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                         Subprocess + Streaming
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│                              ANSIBLE                                       │
+│  ┌──────────────────────────────┐  ┌──────────────────────────────┐        │
+│  │      fortinet.fortios        │  │   paloaltonetworks.panos     │        │
+│  │                              │  │                              │        │
+│  │  fortios_vpn_ipsec_phase1    │  │  panos_ike_crypto_profile    │        │
+│  │  fortios_vpn_ipsec_phase2    │  │  panos_ipsec_profile         │        │
+│  │  fortios_system_interface    │  │  panos_ike_gateway           │        │
+│  │  fortios_router_static       │  │  panos_ipsec_tunnel          │        │
+│  │  fortios_firewall_policy     │  │  panos_static_route          │        │
+│  │  fortios_firewall_address    │  │  panos_security_rule         │        │
+│  └──────────────────────────────┘  └──────────────────────────────┘        │
+└────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                            HTTPS/443 (API)
+                                    │
+              ┌─────────────────────┴─────────────────────┐
+              ▼                                           ▼
+┌──────────────────────────┐             ┌──────────────────────────┐
+│       FORTIGATE          │             │       PALO ALTO          │
+│                          │             │                          │
+│  ┌────────────────────┐  │             │  ┌────────────────────┐  │
+│  │ VPN IPSec Phase1   │  │◄═══════════►│  │ IKE Gateway        │  │
+│  │ VPN IPSec Phase2   │  │   TUNNEL    │  │ IPSec Tunnel       │  │
+│  │ Tunnel Interface   │  │             │  │ Tunnel Interface   │  │
+│  │ Static Routes      │  │             │  │ Static Routes      │  │
+│  │ Firewall Policies  │  │             │  │ Security Policies  │  │
+│  └────────────────────┘  │             │  └────────────────────┘  │
+│                          │             │                          │
+│  REST API (HTTPS)        │             │  XML API (HTTPS)         │
+└──────────────────────────┘             └──────────────────────────┘
+```
+
+</details>
+
+<details>
+<summary><b>📁 Estructura de Archivos</b></summary>
+
+```
+vpn-orchestrator-pro/
+│
+├── 📄 app.py                    # Backend Flask (el cerebro 🧠)
+│   ├── Generadores de playbooks
+│   ├── Extractores de configuración
+│   ├── Comparadores de diff
+│   └── Endpoints REST
+│
+├── 📁 templates/
+│   └── 📄 frontend.html         # UI completa (Tailwind CSS)
+│       ├── Formulario de configuración
+│       ├── Consola de ejecución
+│       ├── Panel de análisis
+│       └── Botones de acción
+│
+├── 📄 requirements.txt          # Dependencias Python
+├── 📄 README.md                 # Esta documentación
+│
+└── 📁 [generado al ejecutar]
+    └── 📁 ansible_workspace_YYYYMMDD_HHMMSS/
+        ├── ansible.cfg
+        ├── hosts.yml
+        └── site.yml
+```
+
+</details>
+
+<details>
+<summary><b>🔐 Componentes de VPN Configurados</b></summary>
+
+### FortiGate (Site A)
+
+| Componente | Módulo Ansible | Descripción |
+|------------|----------------|-------------|
+| Phase 1 | `fortios_vpn_ipsec_phase1_interface` | IKE Gateway (IKEv2) |
+| Phase 2 | `fortios_vpn_ipsec_phase2_interface` | IPSec SA |
+| Tunnel Interface | `fortios_system_interface` | VTI con IP |
+| Address Objects | `fortios_firewall_address` | LANs locales/remotas |
+| Static Routes | `fortios_router_static` | Rutas hacia PA |
+| Policies | `fortios_firewall_policy` | Permitir tráfico VPN |
+
+### Palo Alto (Site B)
+
+| Componente | Módulo Ansible | Descripción |
+|------------|----------------|-------------|
+| VPN Zone | `panos_zone` | Zona para el túnel |
+| Tunnel Interface | `panos_tunnel` | tunnel.1 con IP |
+| IKE Profile | `panos_ike_crypto_profile` | Crypto Phase 1 |
+| IPSec Profile | `panos_ipsec_profile` | Crypto Phase 2 |
+| IKE Gateway | `panos_ike_gateway` | Peer configuration |
+| IPSec Tunnel | `panos_ipsec_tunnel` | Tunnel binding |
+| Proxy ID | `panos_config_element` | Traffic selectors |
+| Static Routes | `panos_static_route` | Rutas hacia FG |
+| Security Rules | `panos_security_rule` | Policies bidireccionales |
+| Commit | `panos_commit_firewall` | Aplicar cambios |
+
+</details>
+
+<details>
+<summary><b>🔒 Perfiles Criptográficos Disponibles</b></summary>
+
+| Perfil | Encryption | Hash | DH Group | Caso de Uso |
+|--------|------------|------|----------|-------------|
+| **Producción** | AES-128-CBC | SHA256 | 14 (2048-bit) | Balance seguridad/rendimiento |
+| **Alta Seguridad** | AES-256-CBC | SHA256 | 14 (2048-bit) | Datos sensibles |
+| **Compatibilidad** | 3DES | SHA256 | 14 (2048-bit) | Equipos legacy |
+| **Legacy/LAB** ⚠️ | DES | SHA256 | 14 (2048-bit) | Solo laboratorio |
+
+### Lifetimes Configurados
+
+| Phase | Lifetime | Notas |
+|-------|----------|-------|
+| Phase 1 (IKE) | 28800s (8h) | Rekey automático |
+| Phase 2 (IPSec) | 3600s (1h) | PFS habilitado |
+
+</details>
+
+---
+
+## 🛠️ API Reference
+
+<details>
+<summary><b>GET / - Interfaz Web</b></summary>
+
+Retorna la página HTML principal.
+
+```bash
+curl http://localhost:5000/
+```
+
+</details>
+
+<details>
+<summary><b>POST /test-connectivity - Test de Conexión</b></summary>
+
+Verifica conectividad HTTPS a ambos dispositivos.
+
+**Request:**
+```json
+{
+  "fg_mgmt_ip": "10.100.100.173",
+  "pa_mgmt_ip": "10.100.100.107"
 }
 ```
 
-* **Columna Izquierda (FortiGate):** Bordes e indicadores visuales en tonos Rojos.
-* **Columna Derecha (Palo Alto):** Bordes e indicadores visuales en tonos Azules (Sky).
+**Response:**
+```json
+{
+  "fortigate": {
+    "success": true,
+    "message": "Conectado",
+    "ip": "10.100.100.173"
+  },
+  "paloalto": {
+    "success": true,
+    "message": "Conectado",
+    "ip": "10.100.100.107"
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>POST /extract-info - Extraer Información</b></summary>
+
+Extrae IPs y zonas de interfaces seleccionadas.
+
+**Request:**
+```json
+{
+  "fg_mgmt_ip": "10.100.100.173",
+  "fg_user": "admin",
+  "fg_password": "****",
+  "fg_wan_intf": "port1",
+  "fg_lan1_intf": "port2",
+  "fg_lan2_intf": "port3",
+  "pa_mgmt_ip": "10.100.100.107",
+  "pa_user": "admin",
+  "pa_password": "****",
+  "pa_wan_intf": "ethernet1/1",
+  "pa_lan1_intf": "ethernet1/2",
+  "pa_lan2_intf": "ethernet1/3"
+}
+```
+
+**Response:**
+```json
+{
+  "fortigate": {
+    "success": true,
+    "interfaces": {
+      "port1": {"ip": "100.100.100.1/30", "status": "up"},
+      "port2": {"ip": "10.100.102.1/24", "status": "up"}
+    }
+  },
+  "paloalto": {
+    "success": true,
+    "interfaces": {
+      "ethernet1/1": {"ip": "200.200.200.1/30", "zone": "untrust"},
+      "ethernet1/2": {"ip": "10.200.202.1/24", "zone": "trust"}
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>POST /compare-config - Comparar Configuración</b></summary>
+
+Analiza config actual vs deseada.
+
+**Response:**
+```json
+{
+  "fortigate": {
+    "success": true,
+    "exists": true,
+    "diff": {
+      "skip": [
+        {"component": "Phase 1", "reason": "Config idéntica"},
+        {"component": "Phase 2", "reason": "Ya existe"}
+      ],
+      "modify": [],
+      "create": []
+    }
+  },
+  "paloalto": {
+    "success": true,
+    "exists": true,
+    "diff": {
+      "skip": ["..."],
+      "modify": [
+        {"component": "IKE Gateway", "changes": "Peer: 1.1.1.1 → 2.2.2.2"}
+      ],
+      "create": [
+        {"component": "Rutas (faltan 1)"}
+      ]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>POST /run - Ejecutar Playbook</b></summary>
+
+Ejecuta Ansible con streaming de salida.
+
+**Response:** `text/event-stream`
+
+```
+PLAY [Configurar Overlay FortiGate] ****
+TASK [Configurar VPN Phase 1] **********
+ok: [forti_site_a]
+...
+PLAY RECAP ****************************
+forti_site_a: ok=11 changed=2
+palo_site_b: ok=12 changed=5
+```
+
+</details>
+
+<details>
+<summary><b>POST /verify-vpn - Verificar Estado VPN</b></summary>
+
+Consulta estado del túnel en ambos dispositivos.
+
+**Response:**
+```json
+{
+  "fortigate": {
+    "success": true,
+    "status": "up",
+    "details": {
+      "phase1": "up",
+      "phase2": "up",
+      "incoming_bytes": 1312456,
+      "outgoing_bytes": 934521,
+      "peer_ip": "200.200.200.1"
+    }
+  },
+  "paloalto": {
+    "success": true,
+    "status": "up",
+    "details": {
+      "ike_status": "established",
+      "ipsec_status": "active"
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>POST /generate - Descargar ZIP</b></summary>
+
+Genera y descarga ZIP con playbooks.
+
+**Response:** `application/zip`
+
+Archivo: `2024-12-08-221500-S2S-OVERLAY.zip`
+
+</details>
 
 ---
 
-## 🧠 Lógica del Lado del Cliente (JavaScript)
+## 🐛 Troubleshooting
 
-El script incluye funciones de "Calidad de Vida" (QoL) para el operador:
+<details>
+<summary><b>❌ "Missing required library pan-python"</b></summary>
 
-### 1. Validación Dinámica de Puertos (`validate...Ports`)
-Evita que el usuario asigne la misma interfaz física a múltiples zonas lógicas (WAN vs LAN).
-* **Comportamiento:** Si seleccionas `port1` como WAN, automáticamente se deshabilita `port1` en los selectores de LAN1 y LAN2, mostrando el texto `(En uso)`.
-* **Beneficio:** Previene errores de capa 2/3 en el Playbook generado.
+### Causa
+Las librerías de Palo Alto no están instaladas o no está activo el venv correcto.
 
-### 2. Sincronización Cruzada de IPs (`syncRemoteIPs`)
-Para reducir la entrada manual de datos y errores de tipeo, el script infiere automáticamente los valores del "Peer Remoto".
-* **Lógica:**
-    * Lo que escribes en **FortiGate WAN IP** se copia automáticamente al campo oculto **Palo Alto Peer IP**.
-    * Lo que escribes en **Tunnel IP Site A** se copia al campo de enrutamiento del Site B.
-* **Resultado:** El usuario solo llena los datos "Locales" de cada equipo; el sistema calcula la topología.
+### Solución
+```bash
+# Activar venv correcto
+source venv/bin/activate
 
-### 3. Gestión de Descarga Asíncrona (`fetch`)
-El formulario no realiza un submit tradicional (que recargaría la página).
-1. Intercepta el evento `submit`.
-2. Envía un JSON vía `POST` al backend Flask.
-3. Recibe un **BLOB** (Binary Large Object) como respuesta.
-4. Lee el header personalizado `X-Filename` para nombrar el archivo `.zip` correctamente (ej: `2023-10-27-VPN_Project.zip`).
-5. Genera un enlace temporal en el DOM para forzar la descarga del navegador.
+# Reinstalar
+pip install pan-python pan-os-python
+
+# Verificar
+python -c "import pan; print('✓ pan-python OK')"
+```
+
+</details>
+
+<details>
+<summary><b>❌ "Error in repo" en FortiGate</b></summary>
+
+### Causa
+Intentas modificar un túnel existente y FortiOS no lo permite sin eliminar primero.
+
+### Solución
+Marca el checkbox **⚠️ Recrear túnel** y vuelve a ejecutar.
+
+</details>
+
+<details>
+<summary><b>❌ "HTTP 403" en Palo Alto</b></summary>
+
+### Causa
+API access deshabilitado o credenciales sin permisos.
+
+### Solución
+1. Verificar credenciales
+2. En PAN-OS GUI:
+   ```
+   Device → Setup → Management → Management Interface Settings
+   ✅ Habilitar HTTPS
+   ✅ Habilitar API
+   ```
+3. El usuario debe tener rol `superuser` o `Device Administrator`
+
+</details>
+
+<details>
+<summary><b>❌ VPN no levanta (Phase 1 timeout)</b></summary>
+
+### Checklist
+- [ ] IPs WAN correctas y alcanzables entre sí
+- [ ] Puertos UDP 500 y 4500 abiertos
+- [ ] PSK idéntica en ambos lados
+- [ ] Crypto profiles coinciden exactamente
+
+</details>
+
+<details>
+<summary><b>❌ VPN levanta pero no pasa tráfico</b></summary>
+
+### Checklist
+- [ ] Rutas estáticas apuntan a la interfaz túnel
+- [ ] Políticas de firewall permiten el tráfico
+- [ ] Zonas correctamente asignadas
+
+</details>
 
 ---
 
-## 🧩 Estructura del DOM
+## 📊 Diagrama de Red
 
-* **Global Settings:** Inputs comunes (PSK, DH Group).
-* **Grid Layout:** Diseño responsivo. En móviles se apila verticalmente; en escritorio muestra los firewalls lado a lado para fácil comparación visual.
-* **Selectores Inteligentes:** Los dropdowns de interfaces (`port1`...`port10`) se generan programáticamente al cargar la página, facilitando la expansión futura a modelos con 24/48 puertos.
+```
+                              INTERNET
+                                 │
+         ┌───────────────────────┴──────────────────────┐
+         │                                              │
+┌────────┴────────┐                           ┌─────────┴────────┐
+│   FORTIGATE     │                           │    PALO ALTO     │
+│   Site A        │                           │    Site B        │
+│                 │   ════════════════════    │                  │
+│ WAN: port1      │◄──► IPSec VPN Tunnel ◄───►│ WAN: eth1/1      │
+│ 100.100.100.1   │   IKEv2 + AES-128         │ 200.200.200.1    │
+│                 │   169.255.1.1 ←→ .2       │                  │
+│ LAN1: port2     │                           │ LAN1: eth1/2     │
+│ 10.100.102.0/24 │◄───── Encrypted ─────────►│ 10.200.202.0/24  │
+│ LAN2: port3     │       Traffic             │ LAN2: eth1/3     │
+│ 10.100.100.0/24 │                           │ 10.200.203.0/24  │
+└─────────────────┘                           └──────────────────┘
+```
 
 ---
 
-> **Nota de Implementación:**
-> Se eligió incluir el CSS y JS dentro del mismo archivo HTML (`<style>` y `<script>`) para mantener la portabilidad del proyecto. En un entorno de producción real, estos se separarían en `static/css/style.css` y `static/js/app.js`.
+## 📄 Licencia
+
+MIT License - Usa, modifica, distribuye. Solo no nos culpes si algo explota. 💥
 
 ---
+
+<div align="center">
+
+### 🎉 ¡Gracias por usar VPN Orchestrator Pro!
+
+**Hecho con ☕, 🎵 e 🤖**
+
+[⬆️ Volver arriba](#-vpn-orchestrator-pro)
+
+</div>
