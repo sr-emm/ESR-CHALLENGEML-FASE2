@@ -59,6 +59,7 @@ python3 -m venv venv && source venv/bin/activate
 pip install flask requests
 
 # Correr la app
+cd vpn_orchestrator
 python app.py
 
 # Abrir http://localhost:5000
