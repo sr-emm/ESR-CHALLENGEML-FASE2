@@ -42,6 +42,7 @@
 4. ▶️ Ejecutas y... ¡VPN lista!
 5. 🧪 Verificas que todo funcione
 ```
+<img width="1892" height="885" alt="image" src="https://github.com/user-attachments/assets/ece9782a-e3a7-4bb9-82e8-e0b872027e06" />
 
 ---
 
@@ -66,6 +67,7 @@ python app.py
 # Hacer clic en "Instalar Dependencias" 🔮
 # ¡Listo! El botón hace el resto automáticamente
 ```
+<img width="436" height="121" alt="image" src="https://github.com/user-attachments/assets/711b371b-b191-4720-b1dc-cd06128980fc" />
 
 ---
 
@@ -253,6 +255,8 @@ docker run -p 5000:5000 vpn-orchestrator
 <details>
 <summary><b>🔌 Paso 1: Test Conexión</b></summary>
 
+<img width="197" height="82" alt="image" src="https://github.com/user-attachments/assets/d94b6f8a-bfc4-45a7-802f-7250c8a71971" />
+
 ### ¿Qué hace?
 Verifica que puedes alcanzar ambos firewalls por HTTPS (puerto 443).
 
@@ -276,6 +280,8 @@ Verifica que puedes alcanzar ambos firewalls por HTTPS (puerto 443).
 
 <details>
 <summary><b>📤 Paso 2: Extraer Config</b></summary>
+
+<img width="190" height="70" alt="image" src="https://github.com/user-attachments/assets/47b52c4e-25e6-4df9-9d04-2ea6204ba49a" />
 
 ### ¿Qué hace?
 1. **Extrae IPs** de las interfaces seleccionadas
@@ -315,6 +321,8 @@ FortiGate:                     Palo Alto:
 
 <details>
 <summary><b>▶️ Paso 3: Ejecutar</b></summary>
+
+<img width="188" height="50" alt="image" src="https://github.com/user-attachments/assets/146ad5bf-7080-4081-b164-c0232d1d33b2" />
 
 ### ¿Qué hace?
 1. **Pre-validación**: Analiza una vez más antes de actuar
@@ -359,6 +367,8 @@ Marca esta opción si:
 
 <details>
 <summary><b>🧪 Paso 4: VPN Tester</b></summary>
+
+<img width="188" height="61" alt="image" src="https://github.com/user-attachments/assets/4297b516-453e-44eb-aa5f-e1d376369e0d" />
 
 ### ¿Qué hace?
 Consulta el estado del túnel **en ambos dispositivos** simultáneamente.
@@ -405,6 +415,8 @@ Consulta el estado del túnel **en ambos dispositivos** simultáneamente.
 
 <details>
 <summary><b>📦 Paso 5: Descargar ZIP</b></summary>
+
+ <img width="189" height="54" alt="image" src="https://github.com/user-attachments/assets/ec7981be-d7f7-405d-b6f8-0df4a2f11f3f" />
 
 ### ¿Qué incluye?
 ```
